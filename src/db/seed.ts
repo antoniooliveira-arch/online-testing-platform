@@ -2,7 +2,15 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "./index";
-import { answers, exams, questions, submissions, users, type User } from "./schema";
+import {
+  alternativas,
+  provas,
+  questoes,
+  respostasAlunos,
+  resultados,
+  users,
+  type User,
+} from "./schema";
 
 const NAMES = [
   "Maria Eduarda Silva",
@@ -86,13 +94,13 @@ async function main() {
     .from(users)
     .where(inArray(users.email, ["ana.souza@avalialab.com.br", "carlos.lima@avalialab.com.br"]));
   for (const acc of demoAccounts) {
-    await db.update(exams).set({ teacherId: admin.id }).where(eq(exams.teacherId, acc.id));
+    await db.update(provas).set({ professorId: admin.id }).where(eq(provas.professorId, acc.id));
     await db.delete(users).where(eq(users.id, acc.id));
   }
 
   // Se já existem provas, mantém os dados existentes e apenas garante o acesso único
-  const [existingExam] = await db.select({ id: exams.id }).from(exams).limit(1);
-  if (existingExam) {
+  const [existingProva] = await db.select({ id: provas.id }).from(provas).limit(1);
+  if (existingProva) {
     console.log("Seed: dados existentes mantidos.");
     console.log("  • Acesso único: nome admin@ / senha 123 (professor e administrador)");
     return;
@@ -101,122 +109,166 @@ async function main() {
   const days = (n: number) => new Date(Date.now() + n * 24 * 60 * 60 * 1000);
   const hoursAgo = (n: number) => new Date(Date.now() - n * 60 * 60 * 1000);
 
-  // ---------- Prova 1: Matemática (ativa, lista única) ----------
-  const [mathExam] = await db
-    .insert(exams)
-    .values({
-      title: "Avaliação de Matemática — 3º bimestre",
-      description: "Leia cada questão com atenção. Use rascunho para os cálculos e envie ao final.",
-      teacherId: admin.id,
-      status: "active",
-      deadline: days(7),
-      targetClasses: "9º ano A, 9º ano B",
-      displayMode: "list",
-      slug: "MAT9B3M",
-      publishedAt: hoursAgo(24 * 6),
-    })
-    .returning();
+  async function insertProva({
+    titulo,
+    disciplina,
+    turma,
+    instrucoes,
+    status,
+    dataFim,
+    codigo,
+  }: {
+    titulo: string;
+    disciplina: string;
+    turma: string;
+    instrucoes: string;
+    status: string;
+    dataFim: Date | null;
+    codigo: string | null;
+  }) {
+    const [prova] = await db
+      .insert(provas)
+      .values({
+        titulo,
+        disciplina,
+        turma,
+        instrucoes,
+        professorId: admin.id,
+        status,
+        dataFim,
+        codigo,
+      })
+      .returning();
+    return prova;
+  }
 
-  const mathQuestions = [
-    { prompt: "Quanto é **3 × (4 + 5)**?", options: ["27", "21", "17", "24"], correctIndex: 0 },
-    { prompt: "Qual é o resultado de **12²**?", options: ["124", "144", "132", "120"], correctIndex: 1 },
-    { prompt: "Se um triângulo tem base **10 cm** e altura **6 cm**, qual é a sua área?", options: ["60 cm²", "16 cm²", "30 cm²", "36 cm²"], correctIndex: 2 },
-    { prompt: "Resolva a equação: **2x + 6 = 18**. Qual é o valor de x?", options: ["x = 12", "x = 6", "x = 3", "x = 9"], correctIndex: 1 },
-    { prompt: "O que significa o número **π (pi)**?", options: ["A razão entre o perímetro e o raio de qualquer círculo", "A razão entre a circunferência e o diâmetro de qualquer círculo", "O dobro do raio de uma circunferência", "Um número inteiro usado em equações"], correctIndex: 1 },
-    { prompt: "Qual fração é equivalente a **0,75**?", options: ["2/3", "1/4", "3/4", "7/10"], correctIndex: 2 },
-    {
-      prompt: "**Problema:** uma loja dá 20% de desconto em um produto de R$ 250,00. \n\nExplique passo a passo como você calcularia o preço final e qual o valor do desconto.",
-      type: "essay",
-      options: [],
-      correctIndex: null,
-    },
-    {
-      prompt: "Descreva com suas palavras a diferença entre *média aritmética* e *mediana*, dando um pequeno exemplo numérico.",
-      type: "essay",
-      options: [],
-      correctIndex: null,
-    },
-  ];
-  const mathQs = await db
-    .insert(questions)
-    .values(mathQuestions.map((q, i) => ({ examId: mathExam.id, prompt: q.prompt, type: q.type ?? "multiple", order: i, options: q.options, correctIndex: q.correctIndex })))
-    .returning();
+  type SeedQuestao = {
+  pergunta: string;
+  tipo?: "multiple" | "essay";
+  valor?: number;
+  alternativas?: { texto: string; correta: boolean }[];
+};
 
-  // ---------- Prova 2: Ciências (ativa, página a página) ----------
-  const [sciExam] = await db
-    .insert(exams)
-    .values({
-      title: "Prova de Ciências — O Sistema Solar",
-      description: "Responda as questões sobre os planetas e o universo. Boa sorte!",
-      teacherId: admin.id,
-      status: "active",
-      deadline: days(5),
-      targetClasses: "8º ano A, 8º ano B",
-      displayMode: "paged",
-      slug: "CIEN8SOL",
-      publishedAt: hoursAgo(24 * 4),
-    })
-    .returning();
+  async function insertQuestao(
+    provaId: number,
+    q: SeedQuestao
+  ) {
+    const [questao] = await db
+      .insert(questoes)
+      .values({ provaId, pergunta: q.pergunta, tipo: q.tipo ?? "multiple", valor: String(q.valor ?? 1), ordem: 0, numero: 0 })
+      .returning();
+    if (q.alternativas && q.alternativas.length > 0) {
+      await db.insert(alternativas).values(
+        q.alternativas.map((a, i) => ({ questaoId: questao.id, letra: String.fromCharCode(65 + i), texto: a.texto, correta: a.correta }))
+      );
+    }
+    return questao;
+  }
 
-  const sciQuestions = [
-    { prompt: "Qual é o **maior planeta** do Sistema Solar?", options: ["Terra", "Saturno", "Júpiter", "Netuno"], correctIndex: 2 },
-    { prompt: "Quantos planetas compõem o Sistema Solar?", options: ["7", "8", "9", "10"], correctIndex: 1 },
-    { prompt: "Qual astro é a **fonte principal de luz e calor** do nosso sistema?", options: ["A Lua", "O Sol", "A Estrela Polar", "Marte"], correctIndex: 1 },
-    { prompt: "O movimento de **rotação** da Terra é responsável por qual fenômeno?", options: ["As estações do ano", "O dia e a noite", "As fases da Lua", "Os eclipses"], correctIndex: 1 },
-    { prompt: "Qual planeta é conhecido como **Planeta Vermelho**?", options: ["Vênus", "Júpiter", "Marte", "Mercúrio"], correctIndex: 2 },
-  ];
-  const sciQs = await db
-    .insert(questions)
-    .values(sciQuestions.map((q, i) => ({ examId: sciExam.id, prompt: q.prompt, type: "multiple", order: i, options: q.options, correctIndex: q.correctIndex })))
-    .returning();
-
-  // ---------- Prova 3: Redação (finalizada) ----------
-  const [essayExam] = await db
-    .insert(exams)
-    .values({
-      title: "Redação — Literatura Brasileira",
-      description: "Produza um texto dissertativo sobre o papel da literatura na formação do cidadão.",
-      teacherId: admin.id,
-      status: "finished",
-      deadline: hoursAgo(24 * 3),
-      targetClasses: "9º ano A",
-      displayMode: "list",
-      slug: "RED9BR",
-      publishedAt: hoursAgo(24 * 12),
-    })
-    .returning();
-  const essayQs = await db
-    .insert(questions)
-    .values([
-      {
-        examId: essayExam.id,
-        prompt: "Escreva um texto dissertativo de **10 a 15 linhas** sobre:\n\n- A importância da leitura na juventude\n- Como os clássicos brasileiros ajudam a entender o país\n- Conclua com sua opinião pessoal",
-        type: "essay",
-        order: 0,
-        options: [],
-        correctIndex: null,
-      },
-    ])
-    .returning();
-
-  // ---------- Rascunho ----------
-  await db.insert(exams).values({
-    title: "Quiz de História — Brasil Colônia",
-    description: "Quiz rápido para revisão antes da prova principal.",
-    teacherId: admin.id,
-    status: "draft",
-    deadline: days(10),
-    targetClasses: "8º ano A",
-    displayMode: "paged",
-    slug: null,
+  // ---------- Prova 1: Matemática (ativa) ----------
+  const mathProva = await insertProva({
+    titulo: "Avaliação de Matemática — 3º bimestre",
+    disciplina: "Matemática",
+    turma: "9º ano A",
+    instrucoes: "Leia cada questão com atenção. Use rascunho para os cálculos e envie ao final.",
+    status: "active",
+    dataFim: days(7),
+    codigo: "MAT9B3M",
   });
 
-  // ---------- Submissões fictícias ----------
+  const mathQuestions: SeedQuestao[] = [
+    { pergunta: "Quanto é **3 × (4 + 5)**?", alternativas: [{ texto: "27", correta: true }, { texto: "21", correta: false }, { texto: "17", correta: false }, { texto: "24", correta: false }] },
+    { pergunta: "Qual é o resultado de **12²**?", alternativas: [{ texto: "124", correta: false }, { texto: "144", correta: true }, { texto: "132", correta: false }, { texto: "120", correta: false }] },
+    { pergunta: "Se um triângulo tem base **10 cm** e altura **6 cm**, qual é a sua área?", alternativas: [{ texto: "60 cm²", correta: false }, { texto: "16 cm²", correta: false }, { texto: "30 cm²", correta: true }, { texto: "36 cm²", correta: false }] },
+    { pergunta: "Resolva a equação: **2x + 6 = 18**. Qual é o valor de x?", alternativas: [{ texto: "x = 12", correta: false }, { texto: "x = 6", correta: true }, { texto: "x = 3", correta: false }, { texto: "x = 9", correta: false }] },
+    { pergunta: "O que significa o número **π (pi)**?", alternativas: [{ texto: "A razão entre o perímetro e o raio de qualquer círculo", correta: false }, { texto: "A razão entre a circunferência e o diâmetro de qualquer círculo", correta: true }, { texto: "O dobro do raio de uma circunferência", correta: false }, { texto: "Um número inteiro usado em equações", correta: false }] },
+    { pergunta: "Qual fração é equivalente a **0,75**?", alternativas: [{ texto: "2/3", correta: false }, { texto: "1/4", correta: false }, { texto: "3/4", correta: true }, { texto: "7/10", correta: false }] },
+    {
+      pergunta: "**Problema:** uma loja dá 20% de desconto em um produto de R$ 250,00. \n\nExplique passo a passo como você calcularia o preço final e qual o valor do desconto.",
+      tipo: "essay",
+      valor: 2,
+    },
+    {
+      pergunta: "Descreva com suas palavras a diferença entre *média aritmética* e *mediana*, dando um pequeno exemplo numérico.",
+      tipo: "essay",
+      valor: 2,
+    },
+  ];
+
+  const mathQs: { id: number; tipo: string; corretaId: number | null }[] = [];
+  for (let i = 0; i < mathQuestions.length; i++) {
+    const q = await insertQuestao(mathProva.id, mathQuestions[i]);
+    const alts = q.tipo === "multiple" ? await db.select().from(alternativas).where(eq(alternativas.questaoId, q.id)) : [];
+    mathQs.push({
+      id: q.id,
+      tipo: q.tipo,
+      corretaId: alts.find((a) => a.correta)?.id ?? null,
+    });
+  }
+
+  // ---------- Prova 2: Ciências (ativa) ----------
+  const sciProva = await insertProva({
+    titulo: "Prova de Ciências — O Sistema Solar",
+    disciplina: "Ciências",
+    turma: "8º ano A",
+    instrucoes: "Responda as questões sobre os planetas e o universo. Boa sorte!",
+    status: "active",
+    dataFim: days(5),
+    codigo: "CIEN8SOL",
+  });
+
+  const sciQuestions: SeedQuestao[] = [
+    { pergunta: "Qual é o **maior planeta** do Sistema Solar?", alternativas: [{ texto: "Terra", correta: false }, { texto: "Saturno", correta: false }, { texto: "Júpiter", correta: true }, { texto: "Netuno", correta: false }] },
+    { pergunta: "Quantos planetas compõem o Sistema Solar?", alternativas: [{ texto: "7", correta: false }, { texto: "8", correta: true }, { texto: "9", correta: false }, { texto: "10", correta: false }] },
+    { pergunta: "Qual astro é a **fonte principal de luz e calor** do nosso sistema?", alternativas: [{ texto: "A Lua", correta: false }, { texto: "O Sol", correta: true }, { texto: "A Estrela Polar", correta: false }, { texto: "Marte", correta: false }] },
+    { pergunta: "O movimento de **rotação** da Terra é responsável por qual fenômeno?", alternativas: [{ texto: "As estações do ano", correta: false }, { texto: "O dia e a noite", correta: true }, { texto: "As fases da Lua", correta: false }, { texto: "Os eclipses", correta: false }] },
+    { pergunta: "Qual planeta é conhecido como **Planeta Vermelho**?", alternativas: [{ texto: "Vênus", correta: false }, { texto: "Júpiter", correta: false }, { texto: "Marte", correta: true }, { texto: "Mercúrio", correta: false }] },
+  ];
+
+  const sciQs: { id: number; tipo: string; corretaId: number | null }[] = [];
+  for (let i = 0; i < sciQuestions.length; i++) {
+    const q = await insertQuestao(sciProva.id, sciQuestions[i]);
+    const alts = await db.select().from(alternativas).where(eq(alternativas.questaoId, q.id));
+    sciQs.push({ id: q.id, tipo: q.tipo, corretaId: alts.find((a) => a.correta)?.id ?? null });
+  }
+
+  // ---------- Prova 3: Redação (finalizada) ----------
+  const essayProva = await insertProva({
+    titulo: "Redação — Literatura Brasileira",
+    disciplina: "Redação",
+    turma: "9º ano A",
+    instrucoes: "Produza um texto dissertativo sobre o papel da literatura na formação do cidadão.",
+    status: "finished",
+    dataFim: hoursAgo(24 * 3),
+    codigo: "RED9BR",
+  });
+  const essayQs: { id: number; tipo: string; corretaId: number | null }[] = [];
+  {
+    const q = await insertQuestao(essayProva.id, {
+      pergunta: "Escreva um texto dissertativo de **10 a 15 linhas** sobre:\n\n- A importância da leitura na juventude\n- Como os clássicos brasileiros ajudam a entender o país\n- Conclua com sua opinião pessoal",
+      tipo: "essay",
+      valor: 10,
+    });
+    essayQs.push({ id: q.id, tipo: q.tipo, corretaId: null });
+  }
+
+  // ---------- Rascunho ----------
+  await insertProva({
+    titulo: "Quiz de História — Brasil Colônia",
+    disciplina: "História",
+    turma: "8º ano A",
+    instrucoes: "Quiz rápido para revisão antes da prova principal.",
+    status: "draft",
+    dataFim: days(10),
+    codigo: null,
+  });
+
+  // ---------- Resultados fictícios ----------
   const rng = mulberry32(42);
 
-  async function seedSubmissions(
-    examId: number,
-    qs: { id: number; type: string; correctIndex: number | null }[],
+  async function seedResultados(
+    provaId: number,
+    qs: { id: number; tipo: string; corretaId: number | null }[],
     count: number,
     classPool: string[]
   ) {
@@ -225,57 +277,68 @@ async function main() {
       const studentClass = classPool[Math.floor(rng() * classPool.length)];
       const school = SCHOOLS[Math.floor(rng() * SCHOOLS.length)];
 
-      const mcQuestions = qs.filter((q) => q.type !== "essay");
-      let correctCount = 0;
-      const answerRows: { questionId: number; selectedIndex: number | null; essayText: string | null; isCorrect: boolean | null }[] = [];
+      const mcQuestions = qs.filter((q) => q.tipo !== "essay");
+      let acertos = 0;
+      const rows: { questaoId: number; alternativaId: number | null; textoResposta: string | null; correta: boolean | null }[] = [];
 
       for (const q of qs) {
-        if (q.type === "essay") {
-          answerRows.push({
-            questionId: q.id,
-            selectedIndex: null,
-            essayText: ESSAY_TEXTS[Math.floor(rng() * ESSAY_TEXTS.length)],
-            isCorrect: null,
-          });
+        if (q.tipo === "essay") {
+          rows.push({ questaoId: q.id, alternativaId: null, textoResposta: ESSAY_TEXTS[Math.floor(rng() * ESSAY_TEXTS.length)], correta: null });
         } else {
           const isCorrect = rng() < 0.68;
-          const optionsCount = 4;
-          let selected: number;
-          if (isCorrect) selected = q.correctIndex as number;
-          else {
-            do {
-              selected = Math.floor(rng() * optionsCount);
-            } while (selected === q.correctIndex);
+          let selected: number | null = null;
+          if (isCorrect) {
+            selected = q.corretaId;
+            acertos += 1;
+          } else {
+            const wrong = await db
+              .select({ id: alternativas.id })
+              .from(alternativas)
+              .where(eq(alternativas.questaoId, q.id));
+            const pool = wrong.filter((a) => a.id !== q.corretaId);
+            selected = pool[Math.floor(rng() * pool.length)]?.id ?? null;
           }
-          if (isCorrect) correctCount += 1;
-          answerRows.push({ questionId: q.id, selectedIndex: selected, essayText: null, isCorrect });
+          rows.push({ questaoId: q.id, alternativaId: selected, textoResposta: null, correta: isCorrect });
         }
       }
 
       const totalMultiple = mcQuestions.length;
-      const score = totalMultiple > 0 ? Math.round((correctCount / totalMultiple) * 1000) / 100 : null;
+      const erros = totalMultiple - acertos;
+      const percentual = totalMultiple > 0 ? Math.round((acertos / totalMultiple) * 10000) / 100 : 0;
+      const nota = Math.round((percentual / 10) * 100) / 100;
 
-      const [sub] = await db
-        .insert(submissions)
+      const [resultado] = await db
+        .insert(resultados)
         .values({
-          examId,
-          studentName: name,
-          studentClass,
-          school,
-          score: score === null ? null : String(score),
-          correctCount,
-          totalMultiple,
-          submittedAt: hoursAgo(Math.floor(rng() * 24 * 6)),
+          provaId,
+          alunoNome: name,
+          alunoTurma: studentClass,
+          escolaNome: school,
+          acertos,
+          erros,
+          nota: String(nota),
+          percentual: String(percentual),
+          criadoEm: hoursAgo(Math.floor(rng() * 24 * 6)),
         })
         .returning();
 
-      await db.insert(answers).values(answerRows.map((r) => ({ submissionId: sub.id, ...r })));
+      await db.insert(respostasAlunos).values(
+        rows.map((r) => ({
+          provaId,
+          alunoNome: name,
+          alunoTurma: studentClass,
+          escolaNome: school,
+          resultadoId: resultado.id,
+          respondidaEm: resultado.criadoEm,
+          ...r,
+        }))
+      );
     }
   }
 
-  await seedSubmissions(mathExam.id, mathQs, 26, ["9º ano A", "9º ano B"]);
-  await seedSubmissions(sciExam.id, sciQs, 18, ["8º ano A", "8º ano B"]);
-  await seedSubmissions(essayExam.id, essayQs, 9, ["9º ano A"]);
+  await seedResultados(mathProva.id, mathQs, 26, ["9º ano A", "9º ano B"]);
+  await seedResultados(sciProva.id, sciQs, 18, ["8º ano A", "8º ano B"]);
+  await seedResultados(essayProva.id, essayQs, 9, ["9º ano A"]);
 
   console.log("Seed concluído:");
   console.log("  • Acesso único: nome admin@ / senha 123 (professor e administrador)");

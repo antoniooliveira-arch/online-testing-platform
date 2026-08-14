@@ -3,9 +3,9 @@ import { getSessionUser } from "@/lib/auth";
 import { buildSubmissionCsv, type ExportFilters } from "@/lib/exports";
 
 function parseFilters(url: URL): ExportFilters {
-  const examId = url.searchParams.get("examId");
+  const provaId = url.searchParams.get("examId") ?? url.searchParams.get("provaId");
   return {
-    examId: examId ? Number(examId) : undefined,
+    provaId: provaId ? Number(provaId) : undefined,
     school: url.searchParams.get("school") || undefined,
     studentClass: url.searchParams.get("class") || undefined,
     search: url.searchParams.get("search") || undefined,

@@ -1,82 +1,105 @@
-import { questions, type Exam } from "@/db/schema";
+import type { Prova } from "@/db/schema";
 
-export type QuestionInput = {
-  prompt: string;
-  type: "multiple" | "essay";
-  options: string[];
-  correctIndex: number | null;
+export type AlternativaInput = { letra: string; texto: string; correta: boolean };
+
+export type QuestaoInput = {
+  pergunta: string;
+  tipo: "multiple" | "essay";
+  valor: number;
+  alternativas: AlternativaInput[];
 };
 
-export type ExamInput = {
-  title: string;
-  description: string;
-  deadline: Date | null;
-  targetClasses: string;
-  displayMode: "list" | "paged";
-  questions: QuestionInput[];
+export type ProvaInput = {
+  titulo: string;
+  disciplina: string;
+  turma: string;
+  escolaId: string | null;
+  instrucoes: string;
+  dataInicio: Date | null;
+  dataFim: Date | null;
+  questoes: QuestaoInput[];
 };
 
 function asString(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
+function asNumber(v: unknown, fallback = 1): number {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 /** Normaliza e valida o payload de criação/edição de prova. */
-export function parseExamPayload(body: unknown): { ok: true; value: ExamInput } | { ok: false; errors: string[] } {
+export function parseProvaPayload(body: unknown): { ok: true; value: ProvaInput } | { ok: false; errors: string[] } {
   const errors: string[] = [];
   const b = (body ?? {}) as Record<string, unknown>;
 
-  const title = asString(b.title);
-  if (title.length < 3) errors.push("Informe um título para a prova.");
+  const titulo = asString(b.titulo);
+  if (titulo.length < 3) errors.push("Informe um título para a prova.");
 
-  const description = asString(b.description);
+  const disciplina = asString(b.disciplina);
+  const turma = asString(b.turma);
+  const instrucoes = asString(b.instrucoes);
 
-  let deadline: Date | null = null;
-  const rawDeadline = asString(b.deadline);
-  if (rawDeadline) {
-    const d = new Date(rawDeadline);
-    if (Number.isNaN(d.getTime())) errors.push("Data limite inválida.");
-    else deadline = d;
-  }
+  const escolaId =
+    typeof b.escolaId === "string" && b.escolaId.trim().length > 0 ? b.escolaId.trim() : null;
 
-  const targetClasses = asString(b.targetClasses);
-  const displayMode: ExamInput["displayMode"] =
-    asString(b.displayMode) === "paged" ? "paged" : "list";
+  const toDate = (v: unknown): Date | null => {
+    const s = asString(v);
+    if (!s) return null;
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const dataInicio = toDate(b.dataInicio);
+  const dataFim = toDate(b.dataFim);
 
-  const rawQuestions = Array.isArray(b.questions) ? b.questions : [];
-  const parsedQuestions: QuestionInput[] = [];
+  const rawQuestoes = Array.isArray(b.questoes) ? b.questoes : [];
+  const parsedQuestoes: QuestaoInput[] = [];
 
-  if (rawQuestions.length === 0) {
+  if (rawQuestoes.length === 0) {
     errors.push("Adicione pelo menos uma questão.");
   } else {
-    rawQuestions.forEach((q, i) => {
+    rawQuestoes.forEach((q, i) => {
       const item = (q ?? {}) as Record<string, unknown>;
-      const prompt = asString(item.prompt);
-      if (!prompt) {
+      const pergunta = asString(item.pergunta);
+      if (!pergunta) {
         errors.push(`A questão ${i + 1} está sem enunciado.`);
         return;
       }
-      const type = asString(item.type) === "essay" ? "essay" : "multiple";
-      const rawOptions = Array.isArray(item.options) ? item.options.map(asString) : [];
-      const options = rawOptions.filter((o) => o.length > 0);
+      const tipo = asString(item.tipo) === "essay" ? "essay" : "multiple";
+      const valor = asNumber(item.valor, 1);
 
-      if (type === "multiple") {
-        if (options.length < 2) {
-          errors.push(`A questão ${i + 1} precisa de pelo menos 2 alternativas preenchidas.`);
-          return;
-        }
-        const correctIndex = Number(item.correctIndex);
-        if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
-          errors.push(`Marque a alternativa correta da questão ${i + 1}.`);
-          return;
-        }
-        parsedQuestions.push({ prompt, type, options, correctIndex });
-      } else {
-        parsedQuestions.push({ prompt, type: "essay", options: [], correctIndex: null });
+      if (tipo === "essay") {
+        parsedQuestoes.push({ pergunta, tipo, valor, alternativas: [] });
+        return;
       }
+
+      const rawAlts = Array.isArray(item.alternativas) ? item.alternativas : [];
+      const alternativas: AlternativaInput[] = [];
+      for (let ai = 0; ai < rawAlts.length; ai++) {
+        const alt = (rawAlts[ai] ?? {}) as Record<string, unknown>;
+        const texto = asString(alt.texto);
+        if (!texto) continue;
+        alternativas.push({
+          letra: asString(alt.letra) || String.fromCharCode(65 + ai),
+          texto,
+          correta: alt.correta === true,
+        });
+      }
+
+      if (alternativas.length < 2) {
+        errors.push(`A questão ${i + 1} precisa de pelo menos 2 alternativas preenchidas.`);
+        return;
+      }
+      if (alternativas.filter((a) => a.correta).length !== 1) {
+        errors.push(`Marque a alternativa correta da questão ${i + 1}.`);
+        return;
+      }
+      parsedQuestoes.push({ pergunta, tipo, valor, alternativas });
     });
   }
 
-  if (parsedQuestions.length === 0 && errors.length === 0) {
+  if (parsedQuestoes.length === 0 && errors.length === 0) {
     errors.push("Adicione pelo menos uma questão válida.");
   }
 
@@ -84,31 +107,31 @@ export function parseExamPayload(body: unknown): { ok: true; value: ExamInput } 
 
   return {
     ok: true,
-    value: { title, description, deadline, targetClasses, displayMode, questions: parsedQuestions },
+    value: { titulo, disciplina, turma, escolaId, instrucoes, dataInicio, dataFim, questoes: parsedQuestoes },
   };
 }
 
 /** Validação rápida de status/publicação. */
-export function validateDeadlineForPublish(deadline: Date | null): string | null {
-  if (deadline && deadline.getTime() < Date.now()) {
-    return "A data limite de entrega precisa estar no futuro para publicar a prova.";
+export function validateDeadlineForPublish(dataFim: Date | null): string | null {
+  if (dataFim && dataFim.getTime() < Date.now()) {
+    return "A data final precisa estar no futuro para publicar a prova.";
   }
   return null;
 }
 
-export function isDraft(exam: Pick<Exam, "status">): boolean {
-  return exam.status === "draft";
+export function isDraft(prova: Pick<Prova, "status">): boolean {
+  return prova.status === "draft";
 }
 
 /** Tamanho máximo do PDF da prova (limite de corpo do Vercel é 4.5MB). */
 export const MAX_PDF_BYTES = 4_000_000;
 
-export type ExamPdfInput = { name: string; data: string; size: number };
+export type ProvaPdfInput = { name: string; data: string; size: number };
 
-export type ExamRequestParsed = {
-  value: ExamInput;
+export type ProvaRequestParsed = {
+  value: ProvaInput;
   publish: boolean;
-  pdf: ExamPdfInput | null;
+  pdf: ProvaPdfInput | null;
   removePdf: boolean;
 };
 
@@ -116,9 +139,9 @@ export type ExamRequestParsed = {
  * Lê e valida o corpo da requisição de criação/edição de prova.
  * Aceita tanto JSON (compatibilidade) quanto multipart/form-data (upload de PDF).
  */
-export async function parseExamRequest(
+export async function parseProvaRequest(
   req: Request
-): Promise<{ ok: true; parsed: ExamRequestParsed } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; parsed: ProvaRequestParsed } | { ok: false; status: number; error: string }> {
   const contentType = req.headers.get("content-type") ?? "";
   const isMultipart = contentType.includes("multipart/form-data");
 
@@ -130,22 +153,24 @@ export async function parseExamRequest(
   if (isMultipart) {
     const fd = await req.formData().catch(() => null);
     if (!fd) return { ok: false, status: 400, error: "Não foi possível ler o envio da prova." };
-    let questions: unknown = [];
-    const rawQuestions = fd.get("questions");
-    if (rawQuestions) {
+    let questoes: unknown = [];
+    const rawQuestoes = fd.get("questoes");
+    if (rawQuestoes) {
       try {
-        questions = JSON.parse(String(rawQuestions));
+        questoes = JSON.parse(String(rawQuestoes));
       } catch {
         return { ok: false, status: 400, error: "Dados das questões inválidos." };
       }
     }
     body = {
-      title: fd.get("title"),
-      description: fd.get("description"),
-      deadline: fd.get("deadline"),
-      targetClasses: fd.get("targetClasses"),
-      displayMode: fd.get("displayMode"),
-      questions,
+      titulo: fd.get("titulo"),
+      disciplina: fd.get("disciplina"),
+      turma: fd.get("turma"),
+      escolaId: fd.get("escolaId"),
+      instrucoes: fd.get("instrucoes"),
+      dataInicio: fd.get("dataInicio"),
+      dataFim: fd.get("dataFim"),
+      questoes,
     };
     publish = fd.get("publish") === "1" || fd.get("publish") === "true";
     removePdf = fd.get("removePdf") === "1" || fd.get("removePdf") === "true";
@@ -157,11 +182,11 @@ export async function parseExamRequest(
     removePdf = body.removePdf === true;
   }
 
-  const parsed = parseExamPayload(body);
+  const parsed = parseProvaPayload(body);
   if (!parsed.ok) return { ok: false, status: 400, error: parsed.errors.join(" ") };
   const { value } = parsed;
 
-  let pdf: ExamPdfInput | null = null;
+  let pdf: ProvaPdfInput | null = null;
   if (pdfFile) {
     if (pdfFile.size === 0) return { ok: false, status: 400, error: "O arquivo PDF está vazio." };
     if (!pdfFile.name.toLowerCase().endsWith(".pdf")) {

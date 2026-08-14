@@ -1,12 +1,12 @@
 import autoTable from "jspdf-autotable";
 import { jsPDF } from "jspdf";
-import { inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { answers } from "@/db/schema";
+import { alternativas, respostasAlunos } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
 import { fetchExportData, hardestQuestions } from "@/lib/exports";
-import { formatDateTime, LETTERS } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 
 /** Gera um relatório PDF formatado com resumo e lista de respostas. */
 export async function GET(req: Request) {
@@ -14,11 +14,12 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
 
   const url = new URL(req.url);
-  const examId = url.searchParams.get("examId") ? Number(url.searchParams.get("examId")) : undefined;
+  const provaId = url.searchParams.get("examId") ?? url.searchParams.get("provaId");
+  const id = provaId ? Number(provaId) : undefined;
   const school = url.searchParams.get("school") || undefined;
   const studentClass = url.searchParams.get("class") || undefined;
 
-  const { rows, exam, questions } = await fetchExportData(user, { examId, school, studentClass });
+  const { rows, prova, questions } = await fetchExportData(user, { provaId: id, school, studentClass });
 
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -37,7 +38,7 @@ export async function GET(req: Request) {
 
   // Filtros aplicados
   const filterParts: string[] = [];
-  if (exam) filterParts.push(`Prova: ${exam.title}`);
+  if (prova) filterParts.push(`Prova: ${prova.titulo}`);
   if (school) filterParts.push(`Escola: ${school}`);
   if (studentClass) filterParts.push(`Turma: ${studentClass}`);
   doc.setTextColor(60, 60, 60);
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
   const total = rows.length;
   const withScore = rows.filter((r) => r.score !== null);
   const avgScore = withScore.length > 0 ? withScore.reduce((acc, r) => acc + (r.score ?? 0), 0) / withScore.length : null;
-  const totalMc = rows.reduce((acc, r) => acc + r.totalMultiple, 0);
+  const totalMc = rows.reduce((acc, r) => acc + r.correctCount + r.erros, 0);
   const totalCorrect = rows.reduce((acc, r) => acc + r.correctCount, 0);
   const correctRate = totalMc > 0 ? (totalCorrect / totalMc) * 100 : null;
 
@@ -79,22 +80,29 @@ export async function GET(req: Request) {
   doc.setFontSize(12);
   doc.text("Respostas dos alunos", 14, afterSummary);
 
-  const hasPerQuestion = Boolean(exam && questions.length > 0);
+  const hasPerQuestion = Boolean(prova && questions.length > 0);
   const head = hasPerQuestion
     ? ["Aluno", "Nº", "Turma", "Escola", "Nota", "Acertos", ...questions.map((_, i) => `Q${i + 1}`)]
     : ["Aluno", "Nº", "Turma", "Escola", "Prova", "Nota", "Acertos", "Enviada em"];
 
   if (rows.length > 0) {
     // Busca as respostas por questão quando filtrado por uma única prova
-    let answerMap = new Map<number, Map<number, (typeof answers.$inferSelect)>>();
-    if (hasPerQuestion) {
+    let answerMap = new Map<number, Map<number, { letra: string | null; textoResposta: string | null; correta: boolean | null }>>();
+    if (hasPerQuestion && id) {
       const ans = await db
-        .select()
-        .from(answers)
-        .where(inArray(answers.submissionId, rows.map((r) => r.id)));
+        .select({
+          resultadoId: respostasAlunos.resultadoId,
+          questaoId: respostasAlunos.questaoId,
+          letra: alternativas.letra,
+          textoResposta: respostasAlunos.textoResposta,
+          correta: respostasAlunos.correta,
+        })
+        .from(respostasAlunos)
+        .leftJoin(alternativas, eq(alternativas.id, respostasAlunos.alternativaId));
       for (const a of ans) {
-        if (!answerMap.has(a.submissionId)) answerMap.set(a.submissionId, new Map());
-        answerMap.get(a.submissionId)!.set(a.questionId, a);
+        const rid = a.resultadoId ?? 0;
+        if (!answerMap.has(rid)) answerMap.set(rid, new Map());
+        answerMap.get(rid)!.set(a.questaoId, a);
       }
     }
 
@@ -103,25 +111,25 @@ export async function GET(req: Request) {
       head: [head],
       body: rows.map((r) => {
         const base = [
-          r.studentName,
+          r.alunoNome,
           r.numeroChamada === null ? "—" : String(r.numeroChamada).padStart(3, "0"),
-          r.studentClass,
-          r.school,
+          r.alunoTurma,
+          r.escolaNome,
         ];
         const score = r.score === null ? "—" : r.score.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
         if (!hasPerQuestion) {
-          return [...base, r.examTitle, score, `${r.correctCount}/${r.totalMultiple}`, formatDateTime(r.submittedAt)];
+          return [...base, r.provaTitulo, score, `${r.correctCount}/${r.correctCount + r.erros}`, formatDateTime(r.submittedAt)];
         }
         const qValues = questions.map((q) => {
           const a = answerMap.get(r.id)?.get(q.id);
           if (!a) return "";
-          if (q.type === "multiple" && a.selectedIndex !== null) {
-            return `${LETTERS[a.selectedIndex] ?? a.selectedIndex + 1}${a.isCorrect ? " ✓" : " ✗"}`;
+          if (q.tipo === "multiple" && a.letra) {
+            return `${a.letra}${a.correta ? " ✓" : " ✗"}`;
           }
-          const text = a.essayText ?? "";
+          const text = a.textoResposta ?? "";
           return text.length > 40 ? `${text.slice(0, 40)}…` : text;
         });
-        return [...base, score, `${r.correctCount}/${r.totalMultiple}`, ...qValues];
+        return [...base, score, `${r.correctCount}/${r.correctCount + r.erros}`, ...qValues];
       }),
       theme: "grid",
       headStyles: { fillColor: [79, 70, 229] },
@@ -138,8 +146,8 @@ export async function GET(req: Request) {
   }
 
   // Questões com maior índice de erro
-  if (examId) {
-    const hardest = await hardestQuestions(examId);
+  if (id) {
+    const hardest = await hardestQuestions(id);
     if (hardest.length > 0) {
       const prevY = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? afterSummary) + 12;
       if (prevY > pageHeight - 60) doc.addPage();
@@ -175,7 +183,7 @@ export async function GET(req: Request) {
   }
 
   const buffer = Buffer.from(doc.output("arraybuffer"));
-  const name = `relatorio${exam ? `-${exam.slug ?? exam.id}` : ""}-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const name = `relatorio${prova ? `-${prova.codigo ?? prova.id}` : ""}-${new Date().toISOString().slice(0, 10)}.pdf`;
 
   return new NextResponse(buffer, {
     headers: {

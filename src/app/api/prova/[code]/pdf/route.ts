@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { exams } from "@/db/schema";
+import { provas } from "@/db/schema";
 import { isExamClosed } from "@/lib/utils";
 
 type Ctx = { params: Promise<{ code: string }> };
@@ -12,14 +12,14 @@ type Ctx = { params: Promise<{ code: string }> };
  */
 export async function GET(_req: Request, { params }: Ctx) {
   const code = ((await params).code ?? "").trim().toUpperCase();
-  const [exam] = await db.select().from(exams).where(eq(exams.slug, code)).limit(1);
+  const [prova] = await db.select().from(provas).where(eq(provas.codigo, code)).limit(1);
 
-  if (!exam || exam.status === "draft" || isExamClosed(exam) || !exam.pdfData) {
+  if (!prova || prova.status === "draft" || isExamClosed(prova) || !prova.arquivoBase64) {
     return NextResponse.json({ ok: false, error: "Prova não encontrada." }, { status: 404 });
   }
 
-  const buffer = Buffer.from(exam.pdfData, "base64");
-  const safeName = (exam.pdfName ?? "prova.pdf").replace(/[^\w.\- ]/g, "");
+  const buffer = Buffer.from(prova.arquivoBase64, "base64");
+  const safeName = (prova.arquivoNome ?? "prova.pdf").replace(/[^\w.\- ]/g, "");
 
   return new NextResponse(buffer, {
     status: 200,

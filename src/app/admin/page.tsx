@@ -122,7 +122,7 @@ export default async function AdminDashboard() {
                 {hardest.map((h) => (
                   <tr key={h.questionId} className="border-b border-slate-50 transition hover:bg-slate-50/60">
                     <td className="max-w-[260px] truncate px-4 py-3 font-medium text-slate-800">{h.prompt}</td>
-                    <td className="max-w-[180px] truncate px-4 py-3 text-slate-500">{h.examTitle}</td>
+                    <td className="max-w-[180px] truncate px-4 py-3 text-slate-500">{h.provaTitulo}</td>
                     <td className="px-4 py-3 text-slate-600">
                       {h.errors} <span className="text-slate-400">de {h.total}</span>
                     </td>

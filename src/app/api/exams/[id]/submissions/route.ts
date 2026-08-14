@@ -1,36 +1,37 @@
-import { asc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { exams, submissions } from "@/db/schema";
+import { provas, resultados } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** Lista as submissões de uma prova (professor dono ou admin). */
+/** Lista os resultados de uma prova (professor dono ou admin). */
 export async function GET(_req: Request, { params }: Ctx) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
 
   const id = Number((await params).id);
-  const [exam] = await db.select().from(exams).where(eq(exams.id, id)).limit(1);
-  if (!exam) return NextResponse.json({ error: "Prova não encontrada." }, { status: 404 });
-  if (user.role !== "admin" && user.id !== exam.teacherId) {
+  const [prova] = await db.select().from(provas).where(eq(provas.id, id)).limit(1);
+  if (!prova) return NextResponse.json({ error: "Prova não encontrada." }, { status: 404 });
+  if (user.role !== "admin" && user.id !== prova.professorId) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 403 });
   }
 
   const rows = await db
     .select()
-    .from(submissions)
-    .where(eq(submissions.examId, id))
-    .orderBy(asc(submissions.submittedAt));
+    .from(resultados)
+    .where(eq(resultados.provaId, id))
+    .orderBy(desc(resultados.criadoEm));
 
   return NextResponse.json({
     ok: true,
-    exam: { id: exam.id, title: exam.title, slug: exam.slug },
-    submissions: rows.map((s) => ({
+    prova: { id: prova.id, titulo: prova.titulo, codigo: prova.codigo },
+    resultados: rows.map((s) => ({
       ...s,
-      submittedAt: s.submittedAt.toISOString(),
-      score: s.score === null ? null : Number(s.score),
+      criadoEm: s.criadoEm.toISOString(),
+      nota: Number(s.nota),
+      percentual: Number(s.percentual),
     })),
   });
 }

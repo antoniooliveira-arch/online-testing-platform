@@ -3,7 +3,7 @@ import { count, desc, eq, inArray } from "drizzle-orm";
 import { CalendarDays, FilePlus2, FolderOpen, Megaphone, Users } from "lucide-react";
 import ExamActions from "@/components/exam-actions";
 import { db } from "@/db";
-import { exams, submissions, users } from "@/db/schema";
+import { provas, resultados, users } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { formatDateTime, isExamClosed } from "@/lib/utils";
 
@@ -14,31 +14,32 @@ export default async function ProfessorDashboard() {
 
   const rows = await db
     .select({
-      id: exams.id,
-      title: exams.title,
-      description: exams.description,
-      teacherId: exams.teacherId,
+      id: provas.id,
+      titulo: provas.titulo,
+      disciplina: provas.disciplina,
+      turma: provas.turma,
+      professorId: provas.professorId,
       teacherName: users.name,
-      status: exams.status,
-      deadline: exams.deadline,
-      slug: exams.slug,
-      targetClasses: exams.targetClasses,
-      createdAt: exams.createdAt,
+      status: provas.status,
+      dataFim: provas.dataFim,
+      dataInicio: provas.dataInicio,
+      codigo: provas.codigo,
+      createdAt: provas.createdAt,
     })
-    .from(exams)
-    .innerJoin(users, eq(exams.teacherId, users.id))
-    .where(user.role === "admin" ? undefined : eq(exams.teacherId, user.id))
-    .orderBy(desc(exams.createdAt));
+    .from(provas)
+    .leftJoin(users, eq(users.id, provas.professorId))
+    .where(user.role === "admin" ? undefined : eq(provas.professorId, user.id))
+    .orderBy(desc(provas.createdAt));
 
   const ids = rows.map((r) => r.id);
   const counts = ids.length
     ? await db
-        .select({ examId: submissions.examId, total: count() })
-        .from(submissions)
-        .where(inArray(submissions.examId, ids))
-        .groupBy(submissions.examId)
+        .select({ provaId: resultados.provaId, total: count() })
+        .from(resultados)
+        .where(inArray(resultados.provaId, ids))
+        .groupBy(resultados.provaId)
     : [];
-  const countMap = new Map(counts.map((c) => [c.examId, Number(c.total)]));
+  const countMap = new Map(counts.map((c) => [c.provaId, Number(c.total)]));
 
   const active = rows.filter((r) => r.status === "active" && !isExamClosed(r));
   const drafts = rows.filter((r) => r.status === "draft");
@@ -82,27 +83,27 @@ export default async function ProfessorDashboard() {
                   {group.title} <span className="font-normal normal-case text-slate-400">· {group.hint}</span>
                 </h2>
                 <div className="mt-3 grid gap-4 md:grid-cols-2">
-                  {group.list.map((exam) => {
-                    const submissionsCount = countMap.get(exam.id) ?? 0;
-                    const closed = isExamClosed(exam);
+                  {group.list.map((prova) => {
+                    const submissionsCount = countMap.get(prova.id) ?? 0;
+                    const closed = isExamClosed(prova);
                     return (
                       <div
-                        key={exam.id}
+                        key={prova.id}
                         className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <StatusBadge
-                              status={exam.status === "draft" ? "draft" : closed ? "finished" : "active"}
+                              status={prova.status === "draft" ? "draft" : closed ? "finished" : "active"}
                             />
                             <Link
-                              href={`/professor/exames/${exam.id}`}
+                              href={`/professor/exames/${prova.id}`}
                               className="mt-2 block truncate text-base font-bold text-slate-900 hover:text-indigo-600"
                             >
-                              {exam.title}
+                              {prova.titulo}
                             </Link>
-                            {exam.description && (
-                              <p className="mt-1 line-clamp-2 text-sm text-slate-500">{exam.description}</p>
+                            {prova.disciplina && (
+                              <p className="mt-1 line-clamp-2 text-sm text-slate-500">{prova.disciplina}</p>
                             )}
                           </div>
                         </div>
@@ -111,20 +112,18 @@ export default async function ProfessorDashboard() {
                             <Users className="h-3.5 w-3.5" />
                             {submissionsCount} {submissionsCount === 1 ? "resposta" : "respostas"}
                           </span>
-                          {exam.targetClasses && (
-                            <span className="max-w-[220px] truncate">Turmas: {exam.targetClasses}</span>
-                          )}
-                          {exam.deadline && <span>Prazo: {formatDateTime(exam.deadline)}</span>}
-                          {user.role === "admin" && <span>Prof.: {exam.teacherName}</span>}
+                          {prova.turma && <span className="max-w-[220px] truncate">Turma: {prova.turma}</span>}
+                          {prova.dataFim && <span>Prazo: {formatDateTime(prova.dataFim)}</span>}
+                          {user.role === "admin" && prova.teacherName && <span>Prof.: {prova.teacherName}</span>}
                         </div>
                         <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
                           <ExamActions
-                            examId={exam.id}
-                            status={exam.status === "draft" ? "draft" : closed ? "finished" : "active"}
-                            editHref={`/professor/exames/${exam.id}/editar`}
+                            examId={prova.id}
+                            status={prova.status === "draft" ? "draft" : closed ? "finished" : "active"}
+                            editHref={`/professor/exames/${prova.id}/editar`}
                           />
                           <Link
-                            href={`/professor/exames/${exam.id}`}
+                            href={`/professor/exames/${prova.id}`}
                             className="text-sm font-semibold text-indigo-600 hover:underline"
                           >
                             Ver detalhes →

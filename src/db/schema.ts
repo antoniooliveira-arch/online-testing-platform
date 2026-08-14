@@ -1,9 +1,7 @@
-import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
   integer,
-  jsonb,
   numeric,
   pgTable,
   serial,
@@ -91,93 +89,119 @@ export const users = pgTable("users", {
 });
 
 /** Provas criadas pelos professores. */
-export const exams = pgTable(
-  "exams",
+export const provas = pgTable(
+  "provas",
   {
     id: serial("id").primaryKey(),
-    title: text("title").notNull(),
-    description: text("description").notNull().default(""),
-    teacherId: integer("teacher_id")
-      .notNull()
-      .references(() => users.id),
+    titulo: text("titulo").notNull(),
+    disciplina: text("disciplina").notNull().default(""),
+    turma: text("turma").notNull().default(""),
+    turmaId: uuid("turma_id").references(() => turmas.id, { onDelete: "set null" }),
+    escolaId: uuid("escola_id").references(() => escolas.id, { onDelete: "set null" }),
+    arquivoNome: text("arquivo_nome"), // PDF: nome original
+    arquivoBase64: text("arquivo_base64"), // PDF: conteúdo em base64
+    arquivoTamanho: integer("arquivo_tamanho"),
+    arquivoUrl: text("arquivo_url"), // URL externa opcional
+    instrucoes: text("instrucoes").notNull().default(""),
+    dataInicio: timestamp("data_inicio", { withTimezone: true }),
+    dataFim: timestamp("data_fim", { withTimezone: true }),
     status: text("status").notNull().default("draft"), // "draft" | "active" | "finished"
-    deadline: timestamp("deadline", { withTimezone: true }),
-    targetClasses: text("target_classes").notNull().default(""),
-    displayMode: text("display_mode").notNull().default("list"), // "list" | "paged"
-    slug: text("slug").unique(), // código/link de acesso gerado ao publicar
-    pdfName: text("pdf_name"), // arquivo da prova em PDF (nome original)
-    pdfData: text("pdf_data"), // conteúdo do PDF em base64
-    pdfSize: integer("pdf_size"),
-    publishedAt: timestamp("published_at", { withTimezone: true }),
+    codigo: text("codigo").unique(), // código/link de acesso gerado ao publicar
+    professorId: integer("professor_id").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index("exams_teacher_idx").on(t.teacherId), index("exams_status_idx").on(t.status)]
+  (t) => [index("provas_status_idx").on(t.status), index("provas_escola_idx").on(t.escolaId)]
 );
 
 /** Questões de uma prova. */
-export const questions = pgTable(
-  "questions",
+export const questoes = pgTable(
+  "questoes",
   {
     id: serial("id").primaryKey(),
-    examId: integer("exam_id")
+    provaId: integer("prova_id")
       .notNull()
-      .references(() => exams.id, { onDelete: "cascade" }),
-    prompt: text("prompt").notNull(),
-    type: text("type").notNull().default("multiple"), // "multiple" | "essay"
-    order: integer("order").notNull().default(0),
-    options: jsonb("options").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-    correctIndex: integer("correct_index"),
+      .references(() => provas.id, { onDelete: "cascade" }),
+    numero: integer("numero").notNull().default(0),
+    pergunta: text("pergunta").notNull(),
+    tipo: text("tipo").notNull().default("multiple"), // "multiple" | "essay"
+    valor: numeric("valor", { precision: 5, scale: 2 }).notNull().default("1"),
+    ordem: integer("ordem").notNull().default(0),
   },
-  (t) => [index("questions_exam_idx").on(t.examId)]
+  (t) => [index("questoes_prova_idx").on(t.provaId)]
 );
 
-/** Submissão de um aluno (prova respondida). */
-export const submissions = pgTable(
-  "submissions",
+/** Alternativas de uma questão de múltipla escolha. */
+export const alternativas = pgTable(
+  "alternativas",
   {
     id: serial("id").primaryKey(),
-    examId: integer("exam_id")
+    questaoId: integer("questao_id")
       .notNull()
-      .references(() => exams.id, { onDelete: "cascade" }),
-    studentName: text("student_name").notNull(),
-    studentClass: text("student_class").notNull(),
-    school: text("school").notNull(),
+      .references(() => questoes.id, { onDelete: "cascade" }),
+    letra: text("letra").notNull(), // "A", "B", "C"...
+    texto: text("texto").notNull(),
+    correta: boolean("correta").notNull().default(false),
+  },
+  (t) => [index("alternativas_questao_idx").on(t.questaoId)]
+);
+
+/** Respostas dos alunos (uma linha por questão respondida). */
+export const respostasAlunos = pgTable(
+  "respostas_alunos",
+  {
+    id: serial("id").primaryKey(),
+    provaId: integer("prova_id")
+      .notNull()
+      .references(() => provas.id, { onDelete: "cascade" }),
     alunoId: uuid("aluno_id").references(() => alunos.id, { onDelete: "set null" }),
     turmaId: uuid("turma_id").references(() => turmas.id, { onDelete: "set null" }),
-    score: numeric("score", { precision: 5, scale: 2 }),
-    correctCount: integer("correct_count").notNull().default(0),
-    totalMultiple: integer("total_multiple").notNull().default(0),
-    submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
+    alunoNome: text("aluno_nome").notNull(),
+    alunoTurma: text("aluno_turma").notNull(),
+    escolaNome: text("escola_nome").notNull(),
+    questaoId: integer("questao_id")
+      .notNull()
+      .references(() => questoes.id, { onDelete: "cascade" }),
+    alternativaId: integer("alternativa_id").references(() => alternativas.id, { onDelete: "set null" }),
+    resultadoId: integer("resultado_id"), // vínculo com resultados.id (sem FK para evitar ordem circular)
+    textoResposta: text("texto_resposta"),
+    correta: boolean("correta"),
+    respondidaEm: timestamp("respondida_em", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    index("submissions_exam_idx").on(t.examId),
-    index("submissions_school_idx").on(t.school),
-    index("submissions_class_idx").on(t.studentClass),
-    index("submissions_aluno_idx").on(t.alunoId),
-    index("submissions_turma_idx").on(t.turmaId),
+    index("respostas_alunos_prova_idx").on(t.provaId),
+    index("respostas_alunos_aluno_idx").on(t.alunoId),
+    index("respostas_alunos_questao_idx").on(t.questaoId),
+    index("respostas_alunos_resultado_idx").on(t.resultadoId),
   ]
 );
 
-/** Respostas individuais de uma submissão. */
-export const answers = pgTable(
-  "answers",
+/** Resultado resumido por aluno. */
+export const resultados = pgTable(
+  "resultados",
   {
     id: serial("id").primaryKey(),
-    submissionId: integer("submission_id")
+    provaId: integer("prova_id")
       .notNull()
-      .references(() => submissions.id, { onDelete: "cascade" }),
-    questionId: integer("question_id")
-      .notNull()
-      .references(() => questions.id, { onDelete: "cascade" }),
-    selectedIndex: integer("selected_index"),
-    essayText: text("essay_text"),
-    isCorrect: boolean("is_correct"),
+      .references(() => provas.id, { onDelete: "cascade" }),
+    alunoId: uuid("aluno_id").references(() => alunos.id, { onDelete: "set null" }),
+    alunoNome: text("aluno_nome").notNull(),
+    alunoTurma: text("aluno_turma").notNull(),
+    escolaNome: text("escola_nome").notNull(),
+    acertos: integer("acertos").notNull().default(0),
+    erros: integer("erros").notNull().default(0),
+    nota: numeric("nota", { precision: 6, scale: 2 }).notNull().default("0"),
+    percentual: numeric("percentual", { precision: 5, scale: 2 }).notNull().default("0"),
+    criadoEm: timestamp("criado_em", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("answers_submission_question_idx").on(t.submissionId, t.questionId)]
+  (t) => [
+    index("resultados_prova_idx").on(t.provaId),
+    index("resultados_aluno_idx").on(t.alunoId),
+  ]
 );
 
 export type User = typeof users.$inferSelect;
-export type Exam = typeof exams.$inferSelect;
-export type Question = typeof questions.$inferSelect;
-export type Submission = typeof submissions.$inferSelect;
-export type Answer = typeof answers.$inferSelect;
+export type Prova = typeof provas.$inferSelect;
+export type Questao = typeof questoes.$inferSelect;
+export type Alternativa = typeof alternativas.$inferSelect;
+export type RespostaAluno = typeof respostasAlunos.$inferSelect;
+export type Resultado = typeof resultados.$inferSelect;

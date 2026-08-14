@@ -16,7 +16,7 @@ import ExamActions from "@/components/exam-actions";
 import ShareCard from "@/components/share-card";
 import { StatusBadge } from "@/app/professor/page";
 import { db } from "@/db";
-import { alunos, exams, questions, submissions, users } from "@/db/schema";
+import { alunos, provas, questoes, resultados, users } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { hardestQuestions } from "@/lib/exports";
 import { formatDateTime, formatScore, isExamClosed } from "@/lib/utils";
@@ -27,38 +27,42 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
   const user = await requireUser(["admin", "teacher"]);
   const id = Number((await params).id);
 
-  const [exam] = await db.select().from(exams).where(eq(exams.id, id)).limit(1);
-  if (!exam) notFound();
-  if (user.role !== "admin" && user.id !== exam.teacherId) notFound();
+  const [prova] = await db.select().from(provas).where(eq(provas.id, id)).limit(1);
+  if (!prova) notFound();
+  if (user.role !== "admin" && user.id !== prova.professorId) notFound();
 
-  const [teacher] = await db.select({ name: users.name }).from(users).where(eq(users.id, exam.teacherId)).limit(1);
-  const qs = await db.select().from(questions).where(eq(questions.examId, id)).orderBy(asc(questions.order));
-  const subs = await db
+  const [teacher] = await db
+    .select({ name: users.name })
+    .from(users)
+    .where(eq(users.id, prova.professorId ?? 0))
+    .limit(1);
+  const qs = await db.select().from(questoes).where(eq(questoes.provaId, id)).orderBy(asc(questoes.ordem));
+  const res = await db
     .select({
-      id: submissions.id,
-      studentName: submissions.studentName,
-      studentClass: submissions.studentClass,
-      school: submissions.school,
+      id: resultados.id,
+      alunoNome: resultados.alunoNome,
+      alunoTurma: resultados.alunoTurma,
+      escolaNome: resultados.escolaNome,
       numeroChamada: alunos.numeroChamada,
-      score: submissions.score,
-      correctCount: submissions.correctCount,
-      totalMultiple: submissions.totalMultiple,
-      submittedAt: submissions.submittedAt,
+      nota: resultados.nota,
+      acertos: resultados.acertos,
+      erros: resultados.erros,
+      criadoEm: resultados.criadoEm,
     })
-    .from(submissions)
-    .leftJoin(alunos, eq(submissions.alunoId, alunos.id))
-    .where(eq(submissions.examId, id))
-    .orderBy(asc(submissions.submittedAt));
+    .from(resultados)
+    .leftJoin(alunos, eq(resultados.alunoId, alunos.id))
+    .where(eq(resultados.provaId, id))
+    .orderBy(asc(resultados.criadoEm));
 
-  const closed = isExamClosed(exam);
-  const effectiveStatus = exam.status === "draft" ? "draft" : closed ? "finished" : "active";
-  const withScore = subs.filter((s) => s.score !== null);
+  const closed = isExamClosed(prova);
+  const effectiveStatus = prova.status === "draft" ? "draft" : closed ? "finished" : "active";
+  const withScore = res.filter((s) => s.nota !== null);
   const avgScore = withScore.length
-    ? withScore.reduce((acc, s) => acc + Number(s.score), 0) / withScore.length
+    ? withScore.reduce((acc, s) => acc + Number(s.nota), 0) / withScore.length
     : null;
-  const totalMc = subs.reduce((acc, s) => acc + s.totalMultiple, 0);
-  const totalCorrect = subs.reduce((acc, s) => acc + s.correctCount, 0);
-  const best = withScore.length ? Math.max(...withScore.map((s) => Number(s.score))) : null;
+  const totalMc = res.reduce((acc, s) => acc + s.acertos + s.erros, 0);
+  const totalCorrect = res.reduce((acc, s) => acc + s.acertos, 0);
+  const best = withScore.length ? Math.max(...withScore.map((s) => Number(s.nota))) : null;
   const hardest = await hardestQuestions(id);
 
   return (
@@ -73,35 +77,34 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">{exam.title}</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">{prova.titulo}</h1>
             <StatusBadge status={effectiveStatus} />
           </div>
-          {exam.description && <p className="mt-1.5 text-sm text-slate-600">{exam.description}</p>}
+          {prova.disciplina && <p className="mt-1.5 text-sm text-slate-600">{prova.disciplina}</p>}
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-slate-500">
             <span className="inline-flex items-center gap-1.5">
               <CalendarDays className="h-4 w-4 text-slate-400" />
-              Prazo: {exam.deadline ? formatDateTime(exam.deadline) : "sem prazo definido"}
+              Prazo: {prova.dataFim ? formatDateTime(prova.dataFim) : "sem prazo definido"}
             </span>
-            {exam.targetClasses && (
+            {prova.turma && (
               <span className="inline-flex items-center gap-1.5">
                 <Target className="h-4 w-4 text-slate-400" />
-                Turmas: {exam.targetClasses}
+                Turma: {prova.turma}
               </span>
             )}
             <span className="inline-flex items-center gap-1.5">
               <Layers className="h-4 w-4 text-slate-400" />
-              {qs.length} {qs.length === 1 ? "questão" : "questões"} ·{" "}
-              {exam.displayMode === "paged" ? "uma por página" : "lista única"}
+              {qs.length} {qs.length === 1 ? "questão" : "questões"}
             </span>
             {user.role === "admin" && teacher && <span>Prof.: {teacher.name}</span>}
           </div>
         </div>
-        <ExamActions examId={exam.id} status={effectiveStatus} editHref={`/professor/exames/${exam.id}/editar`} />
+        <ExamActions examId={prova.id} status={effectiveStatus} editHref={`/professor/exames/${prova.id}/editar`} />
       </div>
 
-      {exam.slug && effectiveStatus !== "draft" ? (
+      {prova.codigo && effectiveStatus !== "draft" ? (
         <div className="mt-6">
-          <ShareCard slug={exam.slug} examTitle={exam.title} />
+          <ShareCard slug={prova.codigo} examTitle={prova.titulo} />
         </div>
       ) : (
         <div className="mt-6 rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-800">
@@ -112,7 +115,7 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
 
       {/* Estatísticas */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric icon={<Users className="h-5 w-5" />} label="Respostas enviadas" value={String(subs.length)} />
+        <Metric icon={<Users className="h-5 w-5" />} label="Respostas enviadas" value={String(res.length)} />
         <Metric
           icon={<Award className="h-5 w-5" />}
           label="Nota média"
@@ -132,13 +135,13 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
           <h2 className="text-lg font-bold text-slate-900">Resultados por aluno</h2>
           <div className="flex gap-2">
             <a
-              href={`/api/exports/csv?examId=${exam.id}`}
+              href={`/api/exports/csv?examId=${prova.id}`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               <FileDown className="h-3.5 w-3.5" /> Exportar Excel (CSV)
             </a>
             <a
-              href={`/api/exports/pdf?examId=${exam.id}`}
+              href={`/api/exports/pdf?examId=${prova.id}`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               <FileText className="h-3.5 w-3.5" /> Exportar PDF
@@ -146,7 +149,7 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
           </div>
         </div>
 
-        {subs.length === 0 ? (
+        {res.length === 0 ? (
           <p className="mt-4 rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-500">
             Nenhuma resposta enviada até o momento. Compartilhe o link com os alunos!
           </p>
@@ -166,28 +169,24 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
                 </tr>
               </thead>
               <tbody>
-                {subs.map((s) => (
+                {res.map((s) => (
                   <tr key={s.id} className="border-b border-slate-50 transition hover:bg-indigo-50/30">
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">
                       {s.numeroChamada === null ? "—" : String(s.numeroChamada).padStart(3, "0")}
                     </td>
-                    <td className="px-4 py-3 font-semibold text-slate-800">{s.studentName}</td>
-                    <td className="px-4 py-3 text-slate-600">{s.studentClass}</td>
-                    <td className="px-4 py-3 text-slate-600">{s.school}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-800">{s.alunoNome}</td>
+                    <td className="px-4 py-3 text-slate-600">{s.alunoTurma}</td>
+                    <td className="px-4 py-3 text-slate-600">{s.escolaNome}</td>
                     <td className="px-4 py-3">
-                      {s.score === null ? (
-                        <span className="text-slate-400">—</span>
-                      ) : (
-                        <span className="font-bold text-indigo-700">{formatScore(s.score)}</span>
-                      )}
+                      <span className="font-bold text-indigo-700">{formatScore(Number(s.nota))}</span>
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      {s.totalMultiple > 0 ? `${s.correctCount}/${s.totalMultiple}` : "—"}
+                      {s.acertos + s.erros > 0 ? `${s.acertos}/${s.acertos + s.erros}` : "—"}
                     </td>
-                    <td className="px-4 py-3 text-slate-500">{formatDateTime(s.submittedAt)}</td>
+                    <td className="px-4 py-3 text-slate-500">{formatDateTime(s.criadoEm)}</td>
                     <td className="px-4 py-3 text-right">
                       <Link
-                        href={`/professor/exames/${exam.id}/respostas/${s.id}`}
+                        href={`/professor/exames/${prova.id}/respostas/${s.id}`}
                         className="text-xs font-semibold text-indigo-600 hover:underline"
                       >
                         Ver prova →

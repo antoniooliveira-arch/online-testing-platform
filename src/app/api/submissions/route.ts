@@ -1,35 +1,40 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import {
   alunos,
-  answers,
+  alternativas,
   escolas,
-  exams,
   matriculas,
-  questions,
-  submissions,
+  provas,
+  questoes,
+  respostasAlunos,
+  resultados,
   turmas,
 } from "@/db/schema";
 import { isExamClosed, normalize } from "@/lib/utils";
 
 const ANO_LETIVO = 2026;
 
-type AnswerInput = { questionId: number; selectedIndex?: number | null; essayText?: string };
+type AnswerInput = { questaoId: number; alternativaId?: number | null; textoResposta?: string };
 
 function asText(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-/** Recebe as respostas do aluno, corrige automaticamente múltipla escolha e salva a submissão. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Recebe as respostas do aluno, corrige automaticamente múltipla escolha e salva o resultado. */
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) ?? {};
 
-  const examSlug = asText(body.examSlug).toUpperCase();
+  const codigo = asText(body.codigo).toUpperCase();
   const alunoId = typeof body.alunoId === "string" ? body.alunoId.trim() : "";
   const turmaId = typeof body.turmaId === "string" ? body.turmaId.trim() : "";
 
-  if (!examSlug) return NextResponse.json({ error: "Código da prova inválido." }, { status: 400 });
+  if (!codigo) return NextResponse.json({ error: "Código da prova inválido." }, { status: 400 });
 
   // Identificação pela matrícula real (escola/turma/aluno do banco escolar)
   let studentName = asText(body.studentName);
@@ -73,20 +78,20 @@ export async function POST(req: Request) {
     if (!school) return NextResponse.json({ error: "Informe a sua escola." }, { status: 400 });
   }
 
-  const [exam] = await db.select().from(exams).where(eq(exams.slug, examSlug)).limit(1);
-  if (!exam || exam.status === "draft") {
+  const [prova] = await db.select().from(provas).where(eq(provas.codigo, codigo)).limit(1);
+  if (!prova || prova.status === "draft") {
     return NextResponse.json({ error: "Prova não encontrada." }, { status: 404 });
   }
-  if (isExamClosed(exam)) {
+  if (isExamClosed(prova)) {
     return NextResponse.json({ error: "O prazo para envio desta prova foi encerrado." }, { status: 403 });
   }
 
   // Impede duplicidade: mesmo aluno (matrícula ou nome normalizado) na mesma prova
   if (alunoId) {
     const [duplicate] = await db
-      .select({ id: submissions.id })
-      .from(submissions)
-      .where(and(eq(submissions.examId, exam.id), eq(submissions.alunoId, alunoId)))
+      .select({ id: resultados.id })
+      .from(resultados)
+      .where(and(eq(resultados.provaId, prova.id), eq(resultados.alunoId, alunoId)))
       .limit(1);
     if (duplicate) {
       return NextResponse.json(
@@ -95,12 +100,12 @@ export async function POST(req: Request) {
       );
     }
   } else {
-    const existing = await db.select().from(submissions).where(eq(submissions.examId, exam.id));
+    const existing = await db.select().from(resultados).where(eq(resultados.provaId, prova.id));
     const duplicate = existing.some(
       (s) =>
-        normalize(s.studentName) === normalize(studentName) &&
-        normalize(s.studentClass) === normalize(studentClass) &&
-        normalize(s.school) === normalize(school)
+        normalize(s.alunoNome) === normalize(studentName) &&
+        normalize(s.alunoTurma) === normalize(studentClass) &&
+        normalize(s.escolaNome) === normalize(school)
     );
     if (duplicate) {
       return NextResponse.json(
@@ -112,54 +117,94 @@ export async function POST(req: Request) {
 
   const qs = await db
     .select()
-    .from(questions)
-    .where(eq(questions.examId, exam.id))
-    .orderBy(asc(questions.order));
+    .from(questoes)
+    .where(eq(questoes.provaId, prova.id))
+    .orderBy(asc(questoes.ordem));
+
+  const qIds = qs.map((q) => q.id);
+  const alts = qIds.length > 0 ? await db.select().from(alternativas).where(inArray(alternativas.questaoId, qIds)) : [];
+  const altsByQuestao = new Map<number, (typeof alts)[number][]>();
+  for (const a of alts) {
+    if (!altsByQuestao.has(a.questaoId)) altsByQuestao.set(a.questaoId, []);
+    altsByQuestao.get(a.questaoId)!.push(a);
+  }
+  const correctByQuestao = new Map<number, number>();
+  for (const a of alts) {
+    if (a.correta) correctByQuestao.set(a.questaoId, a.id);
+  }
 
   const rawAnswers = Array.isArray(body.answers) ? (body.answers as AnswerInput[]) : [];
   const byQuestion = new Map<number, AnswerInput>();
   for (const a of rawAnswers) {
-    if (typeof a.questionId === "number") byQuestion.set(a.questionId, a);
+    if (typeof a.questaoId === "number") byQuestion.set(a.questaoId, a);
   }
 
-  let correctCount = 0;
-  let totalMultiple = 0;
-  const rows: { questionId: number; selectedIndex: number | null; essayText: string | null; isCorrect: boolean | null }[] = [];
+  let acertos = 0;
+  let erros = 0;
+  let valorCorreto = 0;
+  let valorTotal = 0;
+  const rows: {
+    questaoId: number;
+    alternativaId: number | null;
+    textoResposta: string | null;
+    correta: boolean | null;
+  }[] = [];
 
   for (const q of qs) {
     const given = byQuestion.get(q.id);
-    if (q.type === "multiple") {
-      totalMultiple += 1;
-      const selected = Number.isInteger(given?.selectedIndex) ? (given!.selectedIndex as number) : null;
-      const correct = selected !== null && selected === q.correctIndex;
-      if (correct) correctCount += 1;
-      rows.push({ questionId: q.id, selectedIndex: selected, essayText: null, isCorrect: selected === null ? false : correct });
+    if (q.tipo === "multiple") {
+      const valor = Number(q.valor) || 1;
+      valorTotal += valor;
+      const alternativaId = Number.isInteger(given?.alternativaId) ? (given!.alternativaId as number) : null;
+      const correta = alternativaId !== null && correctByQuestao.get(q.id) === alternativaId;
+      if (alternativaId !== null) {
+        if (correta) {
+          acertos += 1;
+          valorCorreto += valor;
+        } else {
+          erros += 1;
+        }
+      }
+      rows.push({ questaoId: q.id, alternativaId, textoResposta: null, correta: alternativaId === null ? false : correta });
     } else {
-      const text = asText(given?.essayText).slice(0, 5000);
-      rows.push({ questionId: q.id, selectedIndex: null, essayText: text || null, isCorrect: null });
+      const text = asText(given?.textoResposta).slice(0, 10000);
+      rows.push({ questaoId: q.id, alternativaId: null, textoResposta: text || null, correta: null });
     }
   }
 
-  const score = totalMultiple > 0 ? Math.round((correctCount / totalMultiple) * 1000) / 100 : null;
+  const percentual = valorTotal > 0 ? round2((valorCorreto / valorTotal) * 100) : 0;
+  const nota = round2(percentual / 10);
 
-  const submissionId = await db.transaction(async (tx) => {
-    const [sub] = await tx
-      .insert(submissions)
+  const resultadoId = await db.transaction(async (tx) => {
+    const [res] = await tx
+      .insert(resultados)
       .values({
-        examId: exam.id,
-        studentName,
-        studentClass,
-        school,
+        provaId: prova.id,
+        alunoId: alunoId || null,
+        alunoNome: studentName,
+        alunoTurma: studentClass,
+        escolaNome: school,
+        acertos,
+        erros,
+        nota: String(nota),
+        percentual: String(percentual),
+      })
+      .returning({ id: resultados.id });
+
+    await tx.insert(respostasAlunos).values(
+      rows.map((r) => ({
+        provaId: prova.id,
         alunoId: alunoId || null,
         turmaId: turmaId || null,
-        score: score === null ? null : String(score),
-        correctCount,
-        totalMultiple,
-      })
-      .returning({ id: submissions.id });
-    await tx.insert(answers).values(rows.map((r) => ({ submissionId: sub.id, ...r })));
-    return sub.id;
+        alunoNome: studentName,
+        alunoTurma: studentClass,
+        escolaNome: school,
+        resultadoId: res.id,
+        ...r,
+      }))
+    );
+    return res.id;
   });
 
-  return NextResponse.json({ ok: true, submissionId, correctCount, totalMultiple, score });
+  return NextResponse.json({ ok: true, resultadoId, acertos, erros, nota, percentual });
 }

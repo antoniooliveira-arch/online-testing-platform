@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Exam } from "@/db/schema";
+import type { Prova } from "@/db/schema";
 
 /** Combina classes CSS condicionalmente. */
 export function cn(...parts: Array<string | false | null | undefined>): string {
@@ -63,11 +63,17 @@ export function normalize(value: string): string {
     .replace(/\s+/g, " ");
 }
 
-/** Prova considerada encerrada quando o prazo expirou ou foi finalizada manualmente. */
-export function isExamClosed(exam: Pick<Exam, "status" | "deadline">): boolean {
+/** Prova considerada encerrada quando o prazo final expirou ou foi finalizada manualmente. */
+export function isExamClosed(exam: Pick<Prova, "status" | "dataFim">): boolean {
   if (exam.status === "finished") return true;
-  if (exam.deadline && new Date(exam.deadline).getTime() < Date.now()) return true;
+  if (exam.dataFim && new Date(exam.dataFim).getTime() < Date.now()) return true;
   return false;
+}
+
+/** Prova ainda não liberada quando a data de início está no futuro. */
+export function notYetOpen(exam: Pick<Prova, "dataInicio">): boolean {
+  if (!exam.dataInicio) return false;
+  return new Date(exam.dataInicio).getTime() > Date.now();
 }
 
 /** Monta o conteúdo de um arquivo CSV com BOM UTF-8 (abre direto no Excel). */

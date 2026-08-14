@@ -17,23 +17,29 @@ import {
   UserRound,
 } from "lucide-react";
 import { renderPrompt } from "@/lib/markdown";
-import { cn, formatDateTime, LETTERS } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
+
+type StudentAlternativa = { id: number; letra: string; texto: string };
 
 type StudentQuestion = {
   id: number;
-  prompt: string;
-  type: "multiple" | "essay";
-  order: number;
-  options: string[];
+  numero: number;
+  pergunta: string;
+  tipo: "multiple" | "essay";
+  valor: number;
+  ordem: number;
+  alternativas: StudentAlternativa[];
 };
 
 type ExamInfo = {
   id: number;
-  title: string;
-  description: string;
-  deadline: string | null;
-  displayMode: "list" | "paged";
-  pdfName?: string | null;
+  titulo: string;
+  disciplina: string;
+  turma: string;
+  instrucoes: string;
+  dataInicio: string | null;
+  dataFim: string | null;
+  arquivoNome?: string | null;
 };
 
 type SchoolAluno = { id: string; nome: string; numeroChamada: number | null };
@@ -55,9 +61,9 @@ type Identify = {
   turmaId: string;
   alunoId: string;
 };
-type AnswerMap = Record<number, { selectedIndex: number | null; essayText: string }>;
+type AnswerMap = Record<number, { alternativaId: number | null; textoResposta: string }>;
 
-type Result = { correctCount: number; totalMultiple: number; score: number | null };
+type Result = { acertos: number; erros: number; nota: number; percentual: number };
 
 type Stage = "loading" | "notfound" | "closed" | "identify" | "exam" | "done";
 
@@ -80,7 +86,6 @@ export default function ExamPlayer({ code }: { code: string }) {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [page, setPage] = useState(0);
   const [showPdf, setShowPdf] = useState(false);
   const loadedRef = useRef(false);
   const storageKey = `${STORAGE_KEY_PREFIX}${code.toUpperCase()}`;
@@ -171,7 +176,7 @@ export default function ExamPlayer({ code }: { code: string }) {
       questions.filter((q) => {
         const a = answers[q.id];
         if (!a) return false;
-        return q.type === "multiple" ? a.selectedIndex !== null : Boolean(a.essayText?.trim());
+        return q.tipo === "multiple" ? a.alternativaId !== null : Boolean(a.textoResposta?.trim());
       }).length,
     [questions, answers]
   );
@@ -181,10 +186,10 @@ export default function ExamPlayer({ code }: { code: string }) {
       questions
         .filter((q) => {
           const a = answers[q.id];
-          if (q.type === "essay") return false;
-          return !a || a.selectedIndex === null;
+          if (q.tipo === "essay") return false;
+          return !a || a.alternativaId === null;
         })
-        .map((q) => q.order + 1),
+        .map((q) => q.numero),
     [questions, answers]
   );
 
@@ -211,27 +216,26 @@ export default function ExamPlayer({ code }: { code: string }) {
       school: selectedEscola!.nome,
       alunoId: aluno.id,
     }));
-    setPage(0);
     setStage("exam");
+    window.scrollTo({ top: 0 });
   }
 
-  function setAnswer(q: StudentQuestion, value: { selectedIndex?: number | null; essayText?: string }) {
+  function setAnswer(q: StudentQuestion, value: { alternativaId?: number | null; textoResposta?: string }) {
     setAnswers((prev) => ({
       ...prev,
-      [q.id]: { selectedIndex: value.selectedIndex ?? prev[q.id]?.selectedIndex ?? null, essayText: value.essayText ?? prev[q.id]?.essayText ?? "" },
+      [q.id]: {
+        alternativaId: value.alternativaId ?? prev[q.id]?.alternativaId ?? null,
+        textoResposta: value.textoResposta ?? prev[q.id]?.textoResposta ?? "",
+      },
     }));
   }
 
   const submitExam = useCallback(async () => {
     setError("");
     if (unanswered.length > 0) {
-      if (exam?.displayMode === "paged") {
-        setPage(questions[unanswered[0] - 1] ? unanswered[0] - 1 : 0);
-      }
-      setError(`Responda as questões de múltipla escolha em branco: ${unanswered.join(", ")}.`);
-      if (exam?.displayMode === "list") {
-        document.getElementById(`q-${questions[unanswered[0] - 1]?.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
+      setError(
+        `Responda as questões de múltipla escolha em branco: ${unanswered.join(", ")}.`
+      );
       return;
     }
     if (!window.confirm("Deseja finalizar e enviar suas respostas? Após o envio não será possível alterá-las.")) return;
@@ -242,7 +246,7 @@ export default function ExamPlayer({ code }: { code: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          examSlug: code,
+          codigo: code,
           studentName: identify.studentName,
           studentClass: identify.studentClass,
           school: identify.school,
@@ -251,9 +255,9 @@ export default function ExamPlayer({ code }: { code: string }) {
           answers: questions.map((q) => {
             const a = answers[q.id];
             return {
-              questionId: q.id,
-              selectedIndex: q.type === "multiple" ? (a?.selectedIndex ?? null) : null,
-              essayText: q.type === "essay" ? a?.essayText ?? "" : "",
+              questaoId: q.id,
+              alternativaId: q.tipo === "multiple" ? (a?.alternativaId ?? null) : null,
+              textoResposta: q.tipo === "essay" ? a?.textoResposta ?? "" : "",
             };
           }),
         }),
@@ -265,14 +269,19 @@ export default function ExamPlayer({ code }: { code: string }) {
         return;
       }
       localStorage.removeItem(storageKey);
-      setResult({ correctCount: data.correctCount, totalMultiple: data.totalMultiple, score: data.score });
+      setResult({
+        acertos: data.acertos,
+        erros: data.erros,
+        nota: data.nota,
+        percentual: data.percentual,
+      });
       setStage("done");
       window.scrollTo({ top: 0 });
     } catch {
       setError("Erro de conexão. Suas respostas estão salvas — tente enviar novamente.");
       setSubmitting(false);
     }
-  }, [unanswered, exam, questions, answers, identify, code, storageKey]);
+  }, [unanswered, questions, answers, identify, code, storageKey]);
 
   // ------------------------- TELAS -------------------------
 
@@ -312,8 +321,8 @@ export default function ExamPlayer({ code }: { code: string }) {
           <AlertTriangle className="mx-auto h-12 w-12 text-amber-500" />
           <h1 className="mt-4 text-xl font-bold text-slate-900">Prova encerrada</h1>
           <p className="mt-2 text-sm text-slate-600">
-            O prazo para envio de <strong>{exam?.title}</strong> já passou.
-            {exam?.deadline && <> Prazo: {formatDateTime(exam.deadline)}.</>}
+            O prazo para envio de <strong>{exam?.titulo}</strong> já passou.
+            {exam?.dataFim && <> Prazo: {formatDateTime(exam.dataFim)}.</>}
           </p>
           <p className="mt-1 text-sm text-slate-500">Fale com o seu professor caso isso seja um erro.</p>
           <Link
@@ -336,8 +345,8 @@ export default function ExamPlayer({ code }: { code: string }) {
               <ClipboardList className="h-6 w-6" />
             </span>
             <div>
-              <h1 className="text-xl font-bold text-slate-900">{exam?.title}</h1>
-              {exam?.description && <p className="text-sm text-slate-500">{exam.description}</p>}
+              <h1 className="text-xl font-bold text-slate-900">{exam?.titulo}</h1>
+              {exam?.disciplina && <p className="text-sm text-slate-500">{exam.disciplina}</p>}
             </div>
           </div>
           <p className="mt-5 text-sm font-medium text-slate-700">Identificação do aluno</p>
@@ -393,11 +402,11 @@ export default function ExamPlayer({ code }: { code: string }) {
               type="submit"
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-500"
             >
-              Começar a prova <ArrowRight className="h-5 w-5" />
+              Começar a prova <ArrowRight />
             </button>
-            {exam?.deadline && (
+            {exam?.dataFim && (
               <p className="text-center text-xs text-slate-400">
-                Prazo de entrega: {formatDateTime(exam.deadline)}
+                Prazo de entrega: {formatDateTime(exam.dataFim)}
               </p>
             )}
           </form>
@@ -416,21 +425,20 @@ export default function ExamPlayer({ code }: { code: string }) {
           <h1 className="mt-5 text-2xl font-bold text-slate-900">Prova enviada com sucesso!</h1>
           <p className="mt-2 text-slate-600">
             Obrigado, <strong>{identify.studentName}</strong>! Suas respostas da prova{" "}
-            <strong>{exam?.title}</strong> foram encaminhadas ao professor/administrador.
+            <strong>{exam?.titulo}</strong> foram encaminhadas ao professor/administrador.
           </p>
-          {result && result.totalMultiple > 0 && (
+          {result && (
             <div className="mx-auto mt-5 max-w-sm rounded-xl border border-emerald-100 bg-emerald-50 p-4">
               <p className="text-sm font-semibold text-emerald-800">
                 Resultado da parte objetiva (correção automática)
               </p>
               <p className="mt-1 text-3xl font-extrabold text-emerald-700">
-                {result.correctCount}/{result.totalMultiple}
+                {result.acertos} acertos · {result.erros} erros
               </p>
-              {result.score !== null && (
-                <p className="text-xs font-medium text-emerald-700/80">
-                  Nota: {result.score.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} de 10
-                </p>
-              )}
+              <p className="text-xs font-medium text-emerald-700/80">
+                Nota: {result.nota.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} de 10 ·{" "}
+                {result.percentual.toLocaleString("pt-BR")}%
+              </p>
               <p className="mt-2 text-[11px] text-emerald-700/70">
                 Questões dissertativas serão corrigidas pelo professor.
               </p>
@@ -448,8 +456,6 @@ export default function ExamPlayer({ code }: { code: string }) {
   }
 
   // ------------------------- PROVA -------------------------
-  const paged = exam?.displayMode === "paged";
-  const current = questions[page];
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -461,7 +467,7 @@ export default function ExamPlayer({ code }: { code: string }) {
                 <GraduationCap className="h-5 w-5" />
               </span>
               <div className="min-w-0">
-                <h1 className="truncate text-sm font-bold text-slate-900 sm:text-base">{exam?.title}</h1>
+                <h1 className="truncate text-sm font-bold text-slate-900 sm:text-base">{exam?.titulo}</h1>
                 <p className="truncate text-xs text-slate-400">
                   {identify.studentName} • {identify.studentClass} • {identify.school}
                 </p>
@@ -484,13 +490,13 @@ export default function ExamPlayer({ code }: { code: string }) {
       <main className="mx-auto max-w-6xl px-4 pb-32 pt-6">
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="mx-auto w-full max-w-3xl">
-            {exam?.description && (
+            {exam?.instrucoes && (
               <p className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900/80">
-                {exam.description}
+                {exam.instrucoes}
               </p>
             )}
 
-            {exam?.pdfName && (
+            {exam?.arquivoNome && (
               <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2.5">
@@ -498,7 +504,7 @@ export default function ExamPlayer({ code }: { code: string }) {
                       <FileText className="h-5 w-5" />
                     </span>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-800">{exam.pdfName}</p>
+                      <p className="truncate text-sm font-semibold text-slate-800">{exam.arquivoNome}</p>
                       <p className="text-xs text-slate-400">Prova em PDF — você pode visualizar enquanto responde.</p>
                     </div>
                   </div>
@@ -535,35 +541,15 @@ export default function ExamPlayer({ code }: { code: string }) {
               </div>
             )}
 
-            {paged && (
-              <div className="mb-4 flex items-center justify-between text-sm">
-                <p className="font-semibold text-slate-700">
-                  Questão {page + 1} <span className="font-normal text-slate-400">de {questions.length}</span>
-                </p>
-                {exam?.deadline && (
-                  <p className="text-xs text-slate-400">Prazo: {formatDateTime(exam.deadline)}</p>
-                )}
-              </div>
-            )}
-
-            {paged && current && (
+            {questions.map((q) => (
               <QuestionCard
-                question={current}
-                answer={answers[current.id]}
-                onAnswer={(value) => setAnswer(current, value)}
+                key={q.id}
+                question={q}
+                answer={answers[q.id]}
+                onAnswer={(value) => setAnswer(q, value)}
+                id={`q-${q.id}`}
               />
-            )}
-
-            {!paged &&
-              questions.map((q) => (
-                <QuestionCard
-                  key={q.id}
-                  question={q}
-                  answer={answers[q.id]}
-                  onAnswer={(value) => setAnswer(q, value)}
-                  id={`q-${q.id}`}
-                />
-              ))}
+            ))}
 
             {error && (
               <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
@@ -577,73 +563,34 @@ export default function ExamPlayer({ code }: { code: string }) {
             <GabaritoPanel
               questions={questions}
               answers={answers}
-              paged={paged}
-              currentPage={page}
-              onMark={(q, index) => setAnswer(q, { selectedIndex: index })}
+              onMark={(q, alternativaId) => setAnswer(q, { alternativaId })}
               onNavigate={(index) => {
-                if (paged) setPage(index);
-                else
-                  document
-                    .getElementById(`q-${questions[index].id}`)
-                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                document
+                  .getElementById(`q-${questions[index].id}`)
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" });
               }}
             />
           </aside>
         </div>
       </main>
 
-      {/* Barra inferior de navegação/envio */}
+      {/* Barra inferior de envio */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          {paged ? (
-            <>
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-40"
-              >
-                <ArrowLeft className="h-4 w-4" /> Anterior
-              </button>
-              {page < questions.length - 1 ? (
-                <button
-                  onClick={() => setPage((p) => Math.min(questions.length - 1, p + 1))}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
-                >
-                  Próxima <ArrowRight className="h-4 w-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={submitExam}
-                  disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
-                >
-                  {submitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  Finalizar e Enviar Prova
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="text-xs text-slate-400">
-                <p className="font-semibold text-slate-600">
-                  {answeredCount} de {questions.length} respondidas
-                </p>
-                {exam?.deadline && <p>Prazo: {formatDateTime(exam.deadline)}</p>}
-              </div>
-              <button
-                onClick={submitExam}
-                disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
-              >
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                Finalizar e Enviar Prova
-              </button>
-            </>
-          )}
+          <div className="text-xs text-slate-400">
+            <p className="font-semibold text-slate-600">
+              {answeredCount} de {questions.length} respondidas
+            </p>
+            {exam?.dataFim && <p>Prazo: {formatDateTime(exam.dataFim)}</p>}
+          </div>
+          <button
+            onClick={submitExam}
+            disabled={submitting}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
+          >
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Finalizar e Enviar Prova
+          </button>
         </div>
       </div>
     </div>
@@ -704,21 +651,17 @@ function Select({
 function GabaritoPanel({
   questions,
   answers,
-  paged,
-  currentPage,
   onMark,
   onNavigate,
 }: {
   questions: StudentQuestion[];
   answers: AnswerMap;
-  paged: boolean;
-  currentPage: number;
-  onMark: (q: StudentQuestion, index: number) => void;
+  onMark: (q: StudentQuestion, alternativaId: number) => void;
   onNavigate: (index: number) => void;
 }) {
   const answered = questions.filter((q) => {
     const a = answers[q.id];
-    return q.type === "essay" ? Boolean(a?.essayText?.trim()) : a?.selectedIndex !== null && a?.selectedIndex !== undefined;
+    return q.tipo === "essay" ? Boolean(a?.textoResposta?.trim()) : a?.alternativaId !== null && a?.alternativaId !== undefined;
   }).length;
 
   return (
@@ -738,31 +681,25 @@ function GabaritoPanel({
       <div className="space-y-2.5">
         {questions.map((q, qi) => {
           const answer = answers[q.id];
-          const selected = answer?.selectedIndex ?? null;
-          const active = paged && currentPage === qi;
+          const selected = answer?.alternativaId ?? null;
+          const selectedAlt = selected !== null ? q.alternativas.find((a) => a.id === selected) : null;
           return (
-            <div
-              key={q.id}
-              className={cn(
-                "rounded-xl border p-2.5 transition",
-                active ? "border-indigo-400 bg-indigo-50/70" : "border-slate-200"
-              )}
-            >
+            <div key={q.id} className="rounded-xl border border-slate-200 p-2.5 transition">
               <div className="flex items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={() => onNavigate(qi)}
                   className="text-xs font-bold text-slate-700 transition hover:text-indigo-600"
                 >
-                  Questão {qi + 1}
+                  Questão {q.numero}
                 </button>
-                {q.type === "essay" ? (
+                {q.tipo === "essay" ? (
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
                     Dissertativa
                   </span>
-                ) : selected !== null ? (
+                ) : selectedAlt ? (
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">
-                    {LETTERS[selected]}
+                    {selectedAlt.letra}
                   </span>
                 ) : (
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
@@ -770,22 +707,22 @@ function GabaritoPanel({
                   </span>
                 )}
               </div>
-              {q.type === "multiple" && (
+              {q.tipo === "multiple" && (
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {q.options.map((_, oi) => (
+                  {q.alternativas.map((a) => (
                     <button
-                      key={oi}
+                      key={a.id}
                       type="button"
-                      onClick={() => onMark(q, oi)}
-                      title={`Marcar alternativa ${LETTERS[oi]}`}
+                      onClick={() => onMark(q, a.id)}
+                      title={`Marcar alternativa ${a.letra}`}
                       className={cn(
                         "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold transition",
-                        selected === oi
+                        selected === a.id
                           ? "bg-indigo-600 text-white"
                           : "bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700"
                       )}
                     >
-                      {LETTERS[oi]}
+                      {a.letra}
                     </button>
                   ))}
                 </div>
@@ -805,36 +742,34 @@ function QuestionCard({
   id,
 }: {
   question: StudentQuestion;
-  answer?: { selectedIndex: number | null; essayText: string };
-  onAnswer: (value: { selectedIndex?: number | null; essayText?: string }) => void;
+  answer?: { alternativaId: number | null; textoResposta: string };
+  onAnswer: (value: { alternativaId?: number | null; textoResposta?: string }) => void;
   id?: string;
 }) {
   return (
-    <div
-      id={id}
-      className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
-    >
+    <div id={id} className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <div className="flex items-start gap-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white">
-          {question.order + 1}
+          {question.numero}
         </span>
         <div className="min-w-0 flex-1 pt-0.5">
-          <div className="text-[15px] leading-relaxed text-slate-900">{renderPrompt(question.prompt)}</div>
+          <div className="text-[15px] leading-relaxed text-slate-900">{renderPrompt(question.pergunta)}</div>
           <span className="mt-2 inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            {question.type === "multiple" ? "Múltipla escolha" : "Dissertativa"}
+            {question.tipo === "multiple" ? "Múltipla escolha" : "Dissertativa"}
+            {question.tipo === "multiple" && ` · valor ${question.valor}`}
           </span>
         </div>
       </div>
 
-      {question.type === "multiple" ? (
+      {question.tipo === "multiple" ? (
         <div className="mt-4 space-y-2">
-          {question.options.map((option, i) => {
-            const selected = answer?.selectedIndex === i;
+          {question.alternativas.map((a) => {
+            const selected = answer?.alternativaId === a.id;
             return (
               <button
-                key={i}
+                key={a.id}
                 type="button"
-                onClick={() => onAnswer({ selectedIndex: i })}
+                onClick={() => onAnswer({ alternativaId: a.id })}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition",
                   selected
@@ -848,9 +783,9 @@ function QuestionCard({
                     selected ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
                   )}
                 >
-                  {LETTERS[i]}
+                  {a.letra}
                 </span>
-                <span className="text-sm text-slate-800">{option}</span>
+                <span className="text-sm text-slate-800">{a.texto}</span>
               </button>
             );
           })}
@@ -858,8 +793,8 @@ function QuestionCard({
       ) : (
         <div className="mt-4">
           <textarea
-            value={answer?.essayText ?? ""}
-            onChange={(e) => onAnswer({ essayText: e.target.value })}
+            value={answer?.textoResposta ?? ""}
+            onChange={(e) => onAnswer({ textoResposta: e.target.value })}
             rows={5}
             placeholder="Escreva sua resposta aqui..."
             className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"

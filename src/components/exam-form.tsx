@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bold,
@@ -19,35 +19,58 @@ import {
 import { renderPrompt } from "@/lib/markdown";
 import { cn } from "@/lib/utils";
 
-export type QuestionDraft = {
+export type AlternativaDraft = {
   key: string;
-  prompt: string;
-  type: "multiple" | "essay";
-  options: string[];
-  correctIndex: number | null;
+  texto: string;
+  correta: boolean;
 };
 
-export type ExamDraft = {
-  title: string;
-  description: string;
-  deadline: string; // datetime-local
-  targetClasses: string;
-  displayMode: "list" | "paged";
+export type QuestaoDraft = {
+  key: string;
+  pergunta: string;
+  tipo: "multiple" | "essay";
+  valor: number;
+  alternativas: AlternativaDraft[];
+};
+
+export type ProvaDraft = {
+  titulo: string;
+  disciplina: string;
+  escolaId: string;
+  turma: string;
+  instrucoes: string;
+  dataInicio: string; // datetime-local
+  dataFim: string; // datetime-local
   pdfName: string | null;
-  questions: QuestionDraft[];
+  questoes: QuestaoDraft[];
 };
 
-const EMPTY_QUESTION = (): QuestionDraft => ({
-  key: Math.random().toString(36).slice(2),
-  prompt: "",
-  type: "multiple",
-  options: ["", ""],
-  correctIndex: null,
+type EscolaOption = { id: string; nome: string; turmas: { id: string; nome: string }[] };
+
+const KEY = () => Math.random().toString(36).slice(2);
+
+const EMPTY_QUESTION = (): QuestaoDraft => ({
+  key: KEY(),
+  pergunta: "",
+  tipo: "multiple",
+  valor: 1,
+  alternativas: [
+    { key: KEY(), texto: "", correta: false },
+    { key: KEY(), texto: "", correta: false },
+  ],
 });
 
-const DEFAULT_DEADLINE = () => {
+const DEFAULT_DATAFIM = () => {
   const d = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
   d.setHours(18, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const toLocalInput = (iso: string | null): string => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
@@ -57,46 +80,81 @@ export default function ExamForm({
   initial,
 }: {
   examId?: number;
-  initial?: ExamDraft;
+  initial?: ProvaDraft;
 }) {
   const router = useRouter();
-  const [draft, setDraft] = useState<ExamDraft>(
+  const [draft, setDraft] = useState<ProvaDraft>(
     initial ?? {
-      title: "",
-      description: "",
-      deadline: DEFAULT_DEADLINE(),
-      targetClasses: "",
-      displayMode: "list",
+      titulo: "",
+      disciplina: "",
+      escolaId: "",
+      turma: "",
+      instrucoes: "",
+      dataInicio: "",
+      dataFim: DEFAULT_DATAFIM(),
       pdfName: null,
-      questions: [EMPTY_QUESTION()],
+      questoes: [EMPTY_QUESTION()],
     }
   );
+  const [escolas, setEscolas] = useState<EscolaOption[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"save" | "publish" | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [removePdf, setRemovePdf] = useState(false);
 
-  const update = (patch: Partial<ExamDraft>) => setDraft((d) => ({ ...d, ...patch }));
-  const updateQuestion = (key: string, patch: Partial<QuestionDraft>) =>
+  useEffect(() => {
+    fetch("/api/escolas")
+      .then((r) => r.json())
+      .then((data) => setEscolas(Array.isArray(data?.escolas) ? data.escolas : []))
+      .catch(() => {});
+  }, []);
+
+  const update = (patch: Partial<ProvaDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const updateQuestao = (key: string, patch: Partial<QuestaoDraft>) =>
     setDraft((d) => ({
       ...d,
-      questions: d.questions.map((q) => (q.key === key ? { ...q, ...patch } : q)),
+      questoes: d.questoes.map((q) => (q.key === key ? { ...q, ...patch } : q)),
     }));
 
-  function addQuestion() {
-    setDraft((d) => ({ ...d, questions: [...d.questions, EMPTY_QUESTION()] }));
+  function addQuestao() {
+    setDraft((d) => ({ ...d, questoes: [...d.questoes, EMPTY_QUESTION()] }));
   }
-  function removeQuestion(key: string) {
-    setDraft((d) => ({ ...d, questions: d.questions.filter((q) => q.key !== key) }));
+  function removeQuestao(key: string) {
+    setDraft((d) => ({ ...d, questoes: d.questoes.filter((q) => q.key !== key) }));
   }
-  function moveQuestion(index: number, dir: -1 | 1) {
+  function moveQuestao(index: number, dir: -1 | 1) {
     setDraft((d) => {
-      const next = [...d.questions];
+      const next = [...d.questoes];
       const target = index + dir;
       if (target < 0 || target >= next.length) return d;
       [next[index], next[target]] = [next[target], next[index]];
-      return { ...d, questions: next };
+      return { ...d, questoes: next };
     });
+  }
+  function setAlternativa(questaoKey: string, altKey: string, patch: Partial<AlternativaDraft>) {
+    updateQuestao(questaoKey, {
+      alternativas: (draft.questoes.find((q) => q.key === questaoKey)?.alternativas ?? []).map((a) =>
+        a.key === altKey ? { ...a, ...patch } : a
+      ),
+    });
+  }
+  function markCorreta(questaoKey: string, altKey: string) {
+    updateQuestao(questaoKey, {
+      alternativas: (draft.questoes.find((q) => q.key === questaoKey)?.alternativas ?? []).map((a) => ({
+        ...a,
+        correta: a.key === altKey,
+      })),
+    });
+  }
+  function addAlternativa(questaoKey: string) {
+    const q = draft.questoes.find((qq) => qq.key === questaoKey);
+    if (!q || q.alternativas.length >= 8) return;
+    updateQuestao(questaoKey, { alternativas: [...q.alternativas, { key: KEY(), texto: "", correta: false }] });
+  }
+  function removeAlternativa(questaoKey: string, altKey: string) {
+    const q = draft.questoes.find((qq) => qq.key === questaoKey);
+    if (!q || q.alternativas.length <= 2) return;
+    updateQuestao(questaoKey, { alternativas: q.alternativas.filter((a) => a.key !== altKey) });
   }
 
   /** Aplica negrito/itálico/listas na seleção atual do textarea. */
@@ -127,9 +185,8 @@ export default function ExamForm({
     }
 
     const next = value.slice(0, start) + replacement + value.slice(end);
-    updateQuestion(key, { prompt: next });
+    updateQuestao(key, { pergunta: next });
 
-    // Restaura o foco e a seleção após re-render
     requestAnimationFrame(() => {
       const ta = document.querySelector<HTMLTextAreaElement>(`textarea[data-qkey="${key}"]`);
       if (ta) {
@@ -139,21 +196,25 @@ export default function ExamForm({
     });
   }
 
-  function validate(requireDeadline = false): string {
-    if (draft.title.trim().length < 3) return "Informe um título para a prova.";
-    if (draft.questions.length === 0) return "Adicione pelo menos uma questão.";
-    for (let i = 0; i < draft.questions.length; i++) {
-      const q = draft.questions[i];
-      if (!q.prompt.trim()) return `A questão ${i + 1} está sem enunciado.`;
-      if (q.type === "multiple") {
-        const filled = q.options.filter((o) => o.trim());
+  function validate(requirePublish = false): string {
+    if (draft.titulo.trim().length < 3) return "Informe um título para a prova.";
+    if (draft.questoes.length === 0) return "Adicione pelo menos uma questão.";
+    for (let i = 0; i < draft.questoes.length; i++) {
+      const q = draft.questoes[i];
+      if (!q.pergunta.trim()) return `A questão ${i + 1} está sem enunciado.`;
+      if (q.valor <= 0) return `A questão ${i + 1} precisa de um valor maior que zero.`;
+      if (q.tipo === "multiple") {
+        const filled = q.alternativas.filter((a) => a.texto.trim());
         if (filled.length < 2) return `A questão ${i + 1} precisa de pelo menos 2 alternativas preenchidas.`;
-        if (q.correctIndex === null || !q.options[q.correctIndex]?.trim())
+        if (!q.alternativas.some((a) => a.correta && a.texto.trim()))
           return `Marque a alternativa correta da questão ${i + 1}.`;
       }
     }
-    if (requireDeadline && draft.deadline && new Date(draft.deadline).getTime() < Date.now()) {
-      return "A data limite precisa estar no futuro para publicar a prova.";
+    if (requirePublish && draft.dataFim && new Date(draft.dataFim).getTime() < Date.now()) {
+      return "A data final precisa estar no futuro para publicar a prova.";
+    }
+    if (requirePublish && draft.dataInicio && draft.dataFim && new Date(draft.dataInicio) > new Date(draft.dataFim)) {
+      return "A data de início deve ser anterior à data final.";
     }
     if (pdfFile) {
       if (!pdfFile.name.toLowerCase().endsWith(".pdf")) return "O arquivo da prova deve ser um PDF.";
@@ -171,23 +232,27 @@ export default function ExamForm({
     }
     setBusy(publish ? "publish" : "save");
     try {
-      const questionsJson = JSON.stringify(
-        draft.questions.map((q) => ({
-          prompt: q.prompt,
-          type: q.type,
-          options: q.options,
-          correctIndex: q.type === "multiple" ? q.correctIndex : null,
+      const questoesJson = JSON.stringify(
+        draft.questoes.map((q) => ({
+          pergunta: q.pergunta,
+          tipo: q.tipo,
+          valor: q.valor,
+          alternativas: q.tipo === "multiple"
+            ? q.alternativas.map((a, i) => ({ letra: String.fromCharCode(65 + i), texto: a.texto, correta: a.correta }))
+            : [],
         }))
       );
 
       const fd = new FormData();
-      fd.append("title", draft.title);
-      fd.append("description", draft.description);
-      fd.append("deadline", draft.deadline || "");
-      fd.append("targetClasses", draft.targetClasses);
-      fd.append("displayMode", draft.displayMode);
+      fd.append("titulo", draft.titulo);
+      fd.append("disciplina", draft.disciplina);
+      fd.append("escolaId", draft.escolaId);
+      fd.append("turma", draft.turma);
+      fd.append("instrucoes", draft.instrucoes);
+      fd.append("dataInicio", draft.dataInicio || "");
+      fd.append("dataFim", draft.dataFim || "");
       fd.append("publish", publish ? "1" : "0");
-      fd.append("questions", questionsJson);
+      fd.append("questoes", questoesJson);
       if (pdfFile) fd.append("pdf", pdfFile);
       if (removePdf) fd.append("removePdf", "1");
 
@@ -208,6 +273,9 @@ export default function ExamForm({
       setBusy(null);
     }
   }
+
+  const selectedEscola = escolas.find((e) => e.id === draft.escolaId);
+  const turmaOptions = selectedEscola?.turmas ?? [];
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -235,58 +303,96 @@ export default function ExamForm({
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Título *</label>
             <input
-              value={draft.title}
-              onChange={(e) => update({ title: e.target.value })}
+              value={draft.titulo}
+              onChange={(e) => update({ titulo: e.target.value })}
               placeholder="Ex.: Avaliação de Matemática — 3º bimestre"
-              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Descrição / instruções</label>
-            <textarea
-              value={draft.description}
-              onChange={(e) => update({ description: e.target.value })}
-              rows={2}
-              placeholder="Ex.: Leia as questões com atenção. Você tem até 60 minutos."
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Data/hora limite de entrega</label>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Disciplina</label>
               <input
-                type="datetime-local"
-                value={draft.deadline}
-                onChange={(e) => update({ deadline: e.target.value })}
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Turmas destinadas</label>
-              <input
-                value={draft.targetClasses}
-                onChange={(e) => update({ targetClasses: e.target.value })}
-                placeholder="Ex.: 9º ano A, 9º ano B"
+                value={draft.disciplina}
+                onChange={(e) => update({ disciplina: e.target.value })}
+                placeholder="Ex.: Matemática"
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
               />
             </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Escola</label>
+              <select
+                value={draft.escolaId}
+                onChange={(e) => update({ escolaId: e.target.value, turma: "" })}
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              >
+                <option value="">Todas as escolas / não informada</option>
+                {escolas.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Exibição das questões</label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <ModeCard
-                active={draft.displayMode === "list"}
-                onClick={() => update({ displayMode: "list" })}
-                title="Lista vertical única"
-                desc="Todas as questões em uma única página, com barra de progresso."
-              />
-              <ModeCard
-                active={draft.displayMode === "paged"}
-                onClick={() => update({ displayMode: "paged" })}
-                title="Uma questão por página"
-                desc="O aluno navega questão a questão, com indicador de progresso."
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Turma</label>
+              {turmaOptions.length > 0 ? (
+                <select
+                  value={draft.turma}
+                  onChange={(e) => update({ turma: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                >
+                  <option value="">Selecione a turma</option>
+                  {turmaOptions.map((t) => (
+                    <option key={t.id} value={t.nome}>
+                      {t.nome}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={draft.turma}
+                  onChange={(e) => update({ turma: e.target.value })}
+                  placeholder="Ex.: 9º ano A"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                />
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Data/hora final de entrega</label>
+              <input
+                type="datetime-local"
+                value={draft.dataFim}
+                onChange={(e) => update({ dataFim: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
               />
             </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Data/hora de liberação (opcional)</label>
+              <input
+                type="datetime-local"
+                value={draft.dataInicio}
+                onChange={(e) => update({ dataInicio: e.target.value })}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              />
+            </div>
+            <div className="self-end">
+              <p className="text-xs text-slate-400">Deixe em branco para liberar imediatamente ao publicar.</p>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Instruções para os alunos</label>
+            <textarea
+              value={draft.instrucoes}
+              onChange={(e) => update({ instrucoes: e.target.value })}
+              rows={2}
+              placeholder="Ex.: Leia as questões com atenção. Você tem até 60 minutos."
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+            />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
@@ -347,22 +453,40 @@ export default function ExamForm({
       <section className="mt-6">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-400">
-            Questões ({draft.questions.length})
+            Questões ({draft.questoes.length})
           </h2>
         </div>
         <div className="space-y-4">
-          {draft.questions.map((q, index) => (
+          {draft.questoes.map((q, index) => (
             <div key={q.key} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-bold text-slate-900">Questão {index + 1}</p>
                 <div className="flex items-center gap-1.5">
+                  <label className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700">
+                    Valor
+                    <input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={q.valor}
+                      onChange={(e) => updateQuestao(q.key, { valor: Number(e.target.value) || 0 })}
+                      className="w-14 rounded-md border border-slate-200 px-1.5 py-0.5 text-center outline-none focus:border-indigo-400"
+                    />
+                  </label>
                   <select
-                    value={q.type}
+                    value={q.tipo}
                     onChange={(e) =>
-                      updateQuestion(q.key, {
-                        type: e.target.value === "essay" ? "essay" : "multiple",
-                        options: e.target.value === "essay" ? [] : q.options.length >= 2 ? q.options : ["", ""],
-                        correctIndex: e.target.value === "essay" ? null : q.correctIndex,
+                      updateQuestao(q.key, {
+                        tipo: e.target.value === "essay" ? "essay" : "multiple",
+                        alternativas:
+                          e.target.value === "essay"
+                            ? []
+                            : q.alternativas.length >= 2
+                              ? q.alternativas
+                              : [
+                                  { key: KEY(), texto: "", correta: false },
+                                  { key: KEY(), texto: "", correta: false },
+                                ],
                       })
                     }
                     className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-400"
@@ -371,7 +495,7 @@ export default function ExamForm({
                     <option value="essay">Dissertativa</option>
                   </select>
                   <button
-                    onClick={() => moveQuestion(index, -1)}
+                    onClick={() => moveQuestao(index, -1)}
                     disabled={index === 0}
                     title="Mover para cima"
                     className="rounded-lg border border-slate-200 p-1.5 text-slate-500 transition hover:bg-slate-50 disabled:opacity-30"
@@ -379,16 +503,16 @@ export default function ExamForm({
                     <ChevronUp className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => moveQuestion(index, 1)}
-                    disabled={index === draft.questions.length - 1}
+                    onClick={() => moveQuestao(index, 1)}
+                    disabled={index === draft.questoes.length - 1}
                     title="Mover para baixo"
                     className="rounded-lg border border-slate-200 p-1.5 text-slate-500 transition hover:bg-slate-50 disabled:opacity-30"
                   >
                     <ChevronDown className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => removeQuestion(q.key)}
-                    disabled={draft.questions.length === 1}
+                    onClick={() => removeQuestao(q.key)}
+                    disabled={draft.questoes.length === 1}
                     title="Remover questão"
                     className="rounded-lg border border-rose-200 p-1.5 text-rose-500 transition hover:bg-rose-50 disabled:opacity-30"
                   >
@@ -419,63 +543,57 @@ export default function ExamForm({
                 </div>
                 <textarea
                   data-qkey={q.key}
-                  value={q.prompt}
-                  onChange={(e) => updateQuestion(q.key, { prompt: e.target.value })}
+                  value={q.pergunta}
+                  onChange={(e) => updateQuestao(q.key, { pergunta: e.target.value })}
                   rows={3}
                   placeholder="Digite o enunciado da questão..."
                   className="w-full resize-y rounded-b-xl border-0 px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-indigo-200"
                 />
-                {q.prompt.trim() && (
+                {q.pergunta.trim() && (
                   <div className="border-t border-slate-100 bg-indigo-50/40 px-4 py-3">
                     <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-400">
                       Pré-visualização
                     </p>
-                    <div className="text-sm text-slate-800">{renderPrompt(q.prompt)}</div>
+                    <div className="text-sm text-slate-800">{renderPrompt(q.pergunta)}</div>
                   </div>
                 )}
               </div>
 
               {/* Alternativas */}
-              {q.type === "multiple" && (
+              {q.tipo === "multiple" && (
                 <div className="mt-4">
                   <p className="mb-2 text-xs font-semibold text-slate-500">
                     Alternativas — marque o círculo da resposta correta
                   </p>
                   <div className="space-y-2">
-                    {q.options.map((option, oi) => (
-                      <div key={oi} className="flex items-center gap-2">
+                    {q.alternativas.map((a, oi) => (
+                      <div key={a.key} className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => updateQuestion(q.key, { correctIndex: oi })}
+                          onClick={() => markCorreta(q.key, a.key)}
                           title="Marcar como correta"
                           className={cn(
                             "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 transition",
-                            q.correctIndex === oi
+                            a.correta
                               ? "border-emerald-500 bg-emerald-100 text-emerald-700"
                               : "border-slate-300 text-transparent hover:border-emerald-300"
                           )}
                         >
                           <span className="text-sm font-bold">✓</span>
                         </button>
+                        <span className="w-6 shrink-0 text-center text-sm font-bold text-slate-400">
+                          {String.fromCharCode(65 + oi)}
+                        </span>
                         <input
-                          value={option}
-                          onChange={(e) => {
-                            const options = [...q.options];
-                            options[oi] = e.target.value;
-                            updateQuestion(q.key, { options });
-                          }}
-                          placeholder={`Alternativa ${String.fromCharCode(65 + oi)}`}
+                          value={a.texto}
+                          onChange={(e) => setAlternativa(q.key, a.key, { texto: e.target.value })}
+                          placeholder={`Texto da alternativa ${String.fromCharCode(65 + oi)}`}
                           className="flex-1 rounded-xl border border-slate-300 px-3.5 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
                         />
                         <button
                           type="button"
-                          onClick={() => {
-                            const options = q.options.filter((_, i) => i !== oi);
-                            const correctIndex =
-                              q.correctIndex === oi ? null : q.correctIndex !== null && q.correctIndex > oi ? q.correctIndex - 1 : q.correctIndex;
-                            updateQuestion(q.key, { options, correctIndex });
-                          }}
-                          disabled={q.options.length <= 2}
+                          onClick={() => removeAlternativa(q.key, a.key)}
+                          disabled={q.alternativas.length <= 2}
                           title="Remover alternativa"
                           className="rounded-lg border border-slate-200 p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 disabled:opacity-30"
                         >
@@ -486,8 +604,8 @@ export default function ExamForm({
                   </div>
                   <button
                     type="button"
-                    onClick={() => updateQuestion(q.key, { options: [...q.options, ""] })}
-                    disabled={q.options.length >= 8}
+                    onClick={() => addAlternativa(q.key)}
+                    disabled={q.alternativas.length >= 8}
                     className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-indigo-300 px-3 py-1.5 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-40"
                   >
                     <Plus className="h-3.5 w-3.5" /> Adicionar alternativa
@@ -495,9 +613,10 @@ export default function ExamForm({
                 </div>
               )}
 
-              {q.type === "essay" && (
+              {q.tipo === "essay" && (
                 <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                  O aluno responderá com texto livre. A correção será feita pelo professor após o envio.
+                  O aluno responderá com texto livre. A correção da dissertativa será feita pelo professor após o envio
+                  (não entra no cálculo automático da nota).
                 </p>
               )}
             </div>
@@ -506,7 +625,7 @@ export default function ExamForm({
 
         <button
           type="button"
-          onClick={addQuestion}
+          onClick={addQuestao}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50/50 px-4 py-4 text-sm font-semibold text-indigo-600 transition hover:bg-indigo-50"
         >
           <Plus className="h-4 w-4" /> Adicionar questão
@@ -566,28 +685,4 @@ function ToolbarButton({
   );
 }
 
-function ModeCard({
-  active,
-  onClick,
-  title,
-  desc,
-}: {
-  active: boolean;
-  onClick: () => void;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-xl border-2 p-4 text-left transition",
-        active ? "border-indigo-500 bg-indigo-50/60" : "border-slate-200 bg-white hover:border-indigo-200"
-      )}
-    >
-      <p className={cn("text-sm font-semibold", active ? "text-indigo-700" : "text-slate-700")}>{title}</p>
-      <p className="mt-0.5 text-xs text-slate-500">{desc}</p>
-    </button>
-  );
-}
+export { toLocalInput };

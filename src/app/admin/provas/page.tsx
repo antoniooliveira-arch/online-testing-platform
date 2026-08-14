@@ -3,7 +3,7 @@ import { count, desc, eq } from "drizzle-orm";
 import { ArrowRight, ClipboardList } from "lucide-react";
 import { StatusBadge } from "@/app/professor/page";
 import { db } from "@/db";
-import { exams, questions, submissions, users } from "@/db/schema";
+import { provas, questoes, resultados, users } from "@/db/schema";
 import { formatDateTime, isExamClosed } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -11,32 +11,31 @@ export const dynamic = "force-dynamic";
 export default async function AdminProvasPage() {
   const rows = await db
     .select({
-      id: exams.id,
-      title: exams.title,
-      description: exams.description,
-      status: exams.status,
-      deadline: exams.deadline,
-      slug: exams.slug,
-      targetClasses: exams.targetClasses,
-      displayMode: exams.displayMode,
-      createdAt: exams.createdAt,
+      id: provas.id,
+      titulo: provas.titulo,
+      disciplina: provas.disciplina,
+      turma: provas.turma,
+      status: provas.status,
+      dataFim: provas.dataFim,
+      codigo: provas.codigo,
+      createdAt: provas.createdAt,
       teacherName: users.name,
     })
-    .from(exams)
-    .innerJoin(users, eq(exams.teacherId, users.id))
-    .orderBy(desc(exams.createdAt));
+    .from(provas)
+    .leftJoin(users, eq(users.id, provas.professorId ?? 0))
+    .orderBy(desc(provas.createdAt));
 
   const qCounts = await db
-    .select({ examId: questions.examId, total: count() })
-    .from(questions)
-    .groupBy(questions.examId);
+    .select({ provaId: questoes.provaId, total: count() })
+    .from(questoes)
+    .groupBy(questoes.provaId);
   const sCounts = await db
-    .select({ examId: submissions.examId, total: count() })
-    .from(submissions)
-    .groupBy(submissions.examId);
+    .select({ provaId: resultados.provaId, total: count() })
+    .from(resultados)
+    .groupBy(resultados.provaId);
 
-  const qMap = new Map(qCounts.map((c) => [c.examId, Number(c.total)]));
-  const sMap = new Map(sCounts.map((c) => [c.examId, Number(c.total)]));
+  const qMap = new Map(qCounts.map((c) => [c.provaId, Number(c.total)]));
+  const sMap = new Map(sCounts.map((c) => [c.provaId, Number(c.total)]));
 
   return (
     <div>
@@ -74,12 +73,10 @@ export default async function AdminProvasPage() {
                 return (
                   <tr key={r.id} className="border-b border-slate-50 transition hover:bg-indigo-50/30">
                     <td className="max-w-[260px] px-4 py-3">
-                      <p className="truncate font-semibold text-slate-800">{r.title}</p>
-                      {r.targetClasses && (
-                        <p className="truncate text-xs text-slate-400">Turmas: {r.targetClasses}</p>
-                      )}
+                      <p className="truncate font-semibold text-slate-800">{r.titulo}</p>
+                      {r.turma && <p className="truncate text-xs text-slate-400">Turma: {r.turma}</p>}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{r.teacherName}</td>
+                    <td className="px-4 py-3 text-slate-600">{r.teacherName ?? "—"}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={status} />
                     </td>
@@ -93,7 +90,7 @@ export default async function AdminProvasPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-slate-500">
-                      {r.deadline ? formatDateTime(r.deadline) : "Sem prazo"}
+                      {r.dataFim ? formatDateTime(r.dataFim) : "Sem prazo"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link

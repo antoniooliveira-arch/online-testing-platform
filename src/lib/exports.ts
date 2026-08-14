@@ -1,11 +1,19 @@
 import { asc, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { alunos, answers, exams, questions, submissions, type User } from "@/db/schema";
+import {
+  alunos,
+  alternativas,
+  provas,
+  questoes,
+  respostasAlunos,
+  resultados,
+  type User,
+} from "@/db/schema";
 import { stripMarkdown } from "@/lib/markdown";
 import { buildCsv, formatDateTime, formatScore, LETTERS } from "@/lib/utils";
 
 export type ExportFilters = {
-  examId?: number;
+  provaId?: number;
   school?: string;
   studentClass?: string;
   search?: string;
@@ -13,81 +21,83 @@ export type ExportFilters = {
 
 export type ExportRow = {
   id: number;
-  examId: number;
-  examTitle: string;
-  examSlug: string | null;
-  studentName: string;
-  studentClass: string;
-  school: string;
+  provaId: number;
+  provaTitulo: string;
+  codigo: string | null;
+  alunoNome: string;
+  alunoTurma: string;
+  escolaNome: string;
   numeroChamada: number | null;
   score: number | null;
   correctCount: number;
-  totalMultiple: number;
+  erros: number;
+  percentual: number | null;
   submittedAt: Date;
 };
 
-/** Busca as submissões conforme filtros, respeitando a permissão do usuário. */
+/** Busca os resultados conforme filtros, respeitando a permissão do usuário. */
 export async function fetchExportData(
   user: User,
   filters: ExportFilters
-): Promise<{ rows: ExportRow[]; exam: (typeof exams.$inferSelect) | null; questions: (typeof questions.$inferSelect)[] }> {
+): Promise<{ rows: ExportRow[]; prova: (typeof provas.$inferSelect) | null; questions: (typeof questoes.$inferSelect)[] }> {
   const conditions = [];
-  let allowedExamIds: number[] | null = null;
+  let allowedProvaIds: number[] | null = null;
 
   if (user.role === "teacher") {
-    const own = await db.select({ id: exams.id }).from(exams).where(eq(exams.teacherId, user.id));
-    allowedExamIds = own.map((e) => e.id);
-    if (allowedExamIds.length === 0) return { rows: [], exam: null, questions: [] };
-    if (filters.examId) {
-      if (!allowedExamIds.includes(filters.examId)) return { rows: [], exam: null, questions: [] };
-      conditions.push(eq(submissions.examId, filters.examId));
+    const own = await db.select({ id: provas.id }).from(provas).where(eq(provas.professorId, user.id));
+    allowedProvaIds = own.map((e) => e.id);
+    if (allowedProvaIds.length === 0) return { rows: [], prova: null, questions: [] };
+    if (filters.provaId) {
+      if (!allowedProvaIds.includes(filters.provaId)) return { rows: [], prova: null, questions: [] };
+      conditions.push(eq(resultados.provaId, filters.provaId));
     } else {
-      conditions.push(inArray(submissions.examId, allowedExamIds));
+      conditions.push(inArray(resultados.provaId, allowedProvaIds));
     }
-  } else if (filters.examId) {
-    conditions.push(eq(submissions.examId, filters.examId));
+  } else if (filters.provaId) {
+    conditions.push(eq(resultados.provaId, filters.provaId));
   }
 
-  if (filters.school) conditions.push(eq(submissions.school, filters.school));
-  if (filters.studentClass) conditions.push(eq(submissions.studentClass, filters.studentClass));
-  if (filters.search) conditions.push(ilike(submissions.studentName, `%${filters.search}%`));
+  if (filters.school) conditions.push(eq(resultados.escolaNome, filters.school));
+  if (filters.studentClass) conditions.push(eq(resultados.alunoTurma, filters.studentClass));
+  if (filters.search) conditions.push(ilike(resultados.alunoNome, `%${filters.search}%`));
 
   const rows = await db
     .select({
-      id: submissions.id,
-      examId: submissions.examId,
-      examTitle: exams.title,
-      examSlug: exams.slug,
-      studentName: submissions.studentName,
-      studentClass: submissions.studentClass,
-      school: submissions.school,
+      id: resultados.id,
+      provaId: resultados.provaId,
+      provaTitulo: provas.titulo,
+      codigo: provas.codigo,
+      alunoNome: resultados.alunoNome,
+      alunoTurma: resultados.alunoTurma,
+      escolaNome: resultados.escolaNome,
       numeroChamada: alunos.numeroChamada,
-      score: submissions.score,
-      correctCount: submissions.correctCount,
-      totalMultiple: submissions.totalMultiple,
-      submittedAt: submissions.submittedAt,
+      score: resultados.nota,
+      correctCount: resultados.acertos,
+      erros: resultados.erros,
+      percentual: resultados.percentual,
+      submittedAt: resultados.criadoEm,
     })
-    .from(submissions)
-    .innerJoin(exams, eq(submissions.examId, exams.id))
-    .leftJoin(alunos, eq(submissions.alunoId, alunos.id))
+    .from(resultados)
+    .innerJoin(provas, eq(resultados.provaId, provas.id))
+    .leftJoin(alunos, eq(resultados.alunoId, alunos.id))
     .where(conditions.length > 0 ? sql`${sql.join(conditions, sql` and `)}` : undefined)
-    .orderBy(desc(submissions.submittedAt));
+    .orderBy(desc(resultados.criadoEm));
 
-  let exam = null;
-  let qs: (typeof questions.$inferSelect)[] = [];
-  if (filters.examId) {
-    const [found] = await db.select().from(exams).where(eq(exams.id, filters.examId)).limit(1);
-    exam = found ?? null;
+  let prova = null;
+  let qs: (typeof questoes.$inferSelect)[] = [];
+  if (filters.provaId) {
+    const [found] = await db.select().from(provas).where(eq(provas.id, filters.provaId)).limit(1);
+    prova = found ?? null;
     qs = await db
       .select()
-      .from(questions)
-      .where(eq(questions.examId, filters.examId))
-      .orderBy(asc(questions.order));
+      .from(questoes)
+      .where(eq(questoes.provaId, filters.provaId))
+      .orderBy(asc(questoes.ordem));
   }
 
   return {
-    rows: rows.map((r) => ({ ...r, score: r.score === null ? null : Number(r.score) })),
-    exam,
+    rows: rows.map((r) => ({ ...r, score: r.score === null ? null : Number(r.score), percentual: r.percentual === null ? null : Number(r.percentual) })),
+    prova,
     questions: qs,
   };
 }
@@ -97,7 +107,7 @@ export async function buildSubmissionCsv(
   user: User,
   filters: ExportFilters
 ): Promise<{ csv: string; filename: string }> {
-  const { rows, exam, questions: qs } = await fetchExportData(user, filters);
+  const { rows, prova, questions: qs } = await fetchExportData(user, filters);
 
   const header: string[] = [
     "Aluno",
@@ -107,46 +117,58 @@ export async function buildSubmissionCsv(
     "Prova",
     "Nota (0-10)",
     "Acertos",
-    "Total múltipla escolha",
+    "Erros",
     "Enviada em",
   ];
-  if (exam && qs.length > 0) {
-    qs.forEach((q, i) => header.push(`Q${i + 1} — ${q.type === "multiple" ? "alternativa" : "dissertativa"}`));
+  if (prova && qs.length > 0) {
+    qs.forEach((q, i) => header.push(`Q${i + 1} — ${q.tipo === "multiple" ? "alternativa" : "dissertativa"}`));
   }
 
   const body: (string | number)[][] = rows.map((r) => {
     const base: (string | number)[] = [
-      r.studentName,
+      r.alunoNome,
       r.numeroChamada === null ? "" : String(r.numeroChamada).padStart(3, "0"),
-      r.studentClass,
-      r.school,
-      r.examTitle,
+      r.alunoTurma,
+      r.escolaNome,
+      r.provaTitulo,
       r.score === null ? "" : r.score.toLocaleString("pt-BR", { maximumFractionDigits: 2 }),
       r.correctCount,
-      r.totalMultiple,
+      r.erros,
       formatDateTime(r.submittedAt),
     ];
     return base;
   });
 
-  if (exam && qs.length > 0 && rows.length > 0) {
-    const submissionIds = rows.map((r) => r.id);
-    const ans = await db.select().from(answers).where(inArray(answers.submissionId, submissionIds));
-    const bySubmission = new Map<number, Map<number, (typeof answers.$inferSelect)>>();
+  if (prova && qs.length > 0 && rows.length > 0) {
+    const provaId = filters.provaId as number;
+    const ans = await db
+      .select({
+        resultadoId: respostasAlunos.resultadoId,
+        questaoId: respostasAlunos.questaoId,
+        alternativaId: respostasAlunos.alternativaId,
+        textoResposta: respostasAlunos.textoResposta,
+        letra: alternativas.letra,
+      })
+      .from(respostasAlunos)
+      .leftJoin(alternativas, eq(alternativas.id, respostasAlunos.alternativaId))
+      .where(eq(respostasAlunos.provaId, provaId));
+
+    const byResultado = new Map<number, Map<number, (typeof ans)[number]>>();
     for (const a of ans) {
-      if (!bySubmission.has(a.submissionId)) bySubmission.set(a.submissionId, new Map());
-      bySubmission.get(a.submissionId)!.set(a.questionId, a);
+      if (a.resultadoId === null) continue;
+      if (!byResultado.has(a.resultadoId)) byResultado.set(a.resultadoId, new Map());
+      byResultado.get(a.resultadoId)!.set(a.questaoId, a);
     }
     rows.forEach((r, idx) => {
-      const map = bySubmission.get(r.id);
+      const map = byResultado.get(r.id);
       for (const q of qs) {
         const a = map?.get(q.id);
         let value = "";
         if (a) {
-          if (q.type === "multiple" && a.selectedIndex !== null) {
-            value = LETTERS[a.selectedIndex] ?? String(a.selectedIndex + 1);
-          } else if (a.essayText) {
-            value = a.essayText.replace(/[\r\n]+/g, " ");
+          if (q.tipo === "multiple" && a.letra) {
+            value = a.letra;
+          } else if (a.textoResposta) {
+            value = a.textoResposta.replace(/[\r\n]+/g, " ");
           }
         }
         body[idx].push(value);
@@ -155,44 +177,45 @@ export async function buildSubmissionCsv(
   }
 
   const csv = buildCsv(body.length > 0 ? [header, ...body] : [header]);
-  const suffix = exam ? `-${exam.slug ?? exam.id}` : "";
+  const suffix = prova ? `-${prova.codigo ?? prova.id}` : "";
   const name = `respostas${suffix}-${new Date().toISOString().slice(0, 10)}.csv`;
   return { csv, filename: name };
 }
 
 /** Perguntas com maior índice de erro (múltipla escolha) para o relatório. */
-export async function hardestQuestions(examId?: number): Promise<
-  { questionId: number; examTitle: string; prompt: string; errors: number; total: number; rate: number }[]
+export async function hardestQuestions(provaId?: number): Promise<
+  { questionId: number; provaTitulo: string; prompt: string; errors: number; total: number; rate: number }[]
 > {
-  const joinConditions = [eq(answers.questionId, questions.id), eq(questions.examId, exams.id)];
-  const where = examId ? [eq(questions.examId, examId), eq(questions.type, "multiple")] : [eq(questions.type, "multiple")];
+  const where = provaId
+    ? [eq(questoes.provaId, provaId), eq(questoes.tipo, "multiple")]
+    : [eq(questoes.tipo, "multiple")];
 
   const rows = await db
     .select({
-      questionId: questions.id,
-      examTitle: exams.title,
-      prompt: questions.prompt,
-      isCorrect: answers.isCorrect,
+      questionId: questoes.id,
+      provaTitulo: provas.titulo,
+      prompt: questoes.pergunta,
+      isCorrect: respostasAlunos.correta,
     })
-    .from(answers)
-    .innerJoin(questions, joinConditions[0])
-    .innerJoin(exams, joinConditions[1])
+    .from(respostasAlunos)
+    .innerJoin(questoes, eq(respostasAlunos.questaoId, questoes.id))
+    .innerJoin(provas, eq(questoes.provaId, provas.id))
     .where(where.length > 0 ? sql`${sql.join(where, sql` and `)}` : undefined);
 
   const stats = new Map<
     number,
-    { questionId: number; examTitle: string; prompt: string; errors: number; total: number }
+    { questionId: number; provaTitulo: string; prompt: string; errors: number; total: number }
   >();
   for (const r of rows) {
     const s = stats.get(r.questionId) ?? {
       questionId: r.questionId,
-      examTitle: r.examTitle,
+      provaTitulo: r.provaTitulo,
       prompt: r.prompt,
       errors: 0,
       total: 0,
     };
     s.total += 1;
-    if (!r.isCorrect) s.errors += 1;
+    if (r.isCorrect === false) s.errors += 1;
     stats.set(r.questionId, s);
   }
 
@@ -207,3 +230,5 @@ export async function hardestQuestions(examId?: number): Promise<
 export function scoreLabel(score: number | null): string {
   return score === null ? "—" : formatScore(score);
 }
+
+export { LETTERS };

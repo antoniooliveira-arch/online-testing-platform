@@ -2,7 +2,7 @@ import Link from "next/link";
 import { and, asc, desc, eq, ilike } from "drizzle-orm";
 import { FileDown, FileText, FilterX, ListChecks, Search } from "lucide-react";
 import { db } from "@/db";
-import { alunos, exams, submissions } from "@/db/schema";
+import { alunos, provas, resultados } from "@/db/schema";
 import { formatDateTime, formatScore } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -17,59 +17,59 @@ export default async function AdminRespostasPage({
   const sp = await searchParams;
   const school = typeof sp.escola === "string" ? sp.escola : "";
   const studentClass = typeof sp.turma === "string" ? sp.turma : "";
-  const examId = typeof sp.prova === "string" && sp.prova ? Number(sp.prova) : undefined;
+  const provaId = typeof sp.prova === "string" && sp.prova ? Number(sp.prova) : undefined;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
 
   // Opções dos filtros
   const schoolRows = await db
-    .selectDistinct({ school: submissions.school })
-    .from(submissions)
-    .orderBy(asc(submissions.school));
+    .selectDistinct({ school: resultados.escolaNome })
+    .from(resultados)
+    .orderBy(asc(resultados.escolaNome));
   const classRows = await db
-    .selectDistinct({ studentClass: submissions.studentClass })
-    .from(submissions)
-    .orderBy(asc(submissions.studentClass));
-  const examRows = await db
-    .select({ id: exams.id, title: exams.title })
-    .from(exams)
-    .orderBy(asc(exams.title));
+    .selectDistinct({ studentClass: resultados.alunoTurma })
+    .from(resultados)
+    .orderBy(asc(resultados.alunoTurma));
+  const provaRows = await db
+    .select({ id: provas.id, titulo: provas.titulo })
+    .from(provas)
+    .orderBy(asc(provas.titulo));
 
   // Filtros ativos
   const conditions = [];
-  if (school) conditions.push(eq(submissions.school, school));
-  if (studentClass) conditions.push(eq(submissions.studentClass, studentClass));
-  if (examId) conditions.push(eq(submissions.examId, examId));
-  if (q) conditions.push(ilike(submissions.studentName, `%${q}%`));
+  if (school) conditions.push(eq(resultados.escolaNome, school));
+  if (studentClass) conditions.push(eq(resultados.alunoTurma, studentClass));
+  if (provaId) conditions.push(eq(resultados.provaId, provaId));
+  if (q) conditions.push(ilike(resultados.alunoNome, `%${q}%`));
 
   const rows = await db
     .select({
-      id: submissions.id,
-      examId: submissions.examId,
-      examTitle: exams.title,
-      studentName: submissions.studentName,
-      studentClass: submissions.studentClass,
-      school: submissions.school,
+      id: resultados.id,
+      provaId: resultados.provaId,
+      provaTitulo: provas.titulo,
+      alunoNome: resultados.alunoNome,
+      alunoTurma: resultados.alunoTurma,
+      escolaNome: resultados.escolaNome,
       numeroChamada: alunos.numeroChamada,
-      score: submissions.score,
-      correctCount: submissions.correctCount,
-      totalMultiple: submissions.totalMultiple,
-      submittedAt: submissions.submittedAt,
+      nota: resultados.nota,
+      acertos: resultados.acertos,
+      erros: resultados.erros,
+      criadoEm: resultados.criadoEm,
     })
-    .from(submissions)
-    .innerJoin(exams, eq(submissions.examId, exams.id))
-    .leftJoin(alunos, eq(submissions.alunoId, alunos.id))
+    .from(resultados)
+    .innerJoin(provas, eq(resultados.provaId, provas.id))
+    .leftJoin(alunos, eq(resultados.alunoId, alunos.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(submissions.submittedAt))
+    .orderBy(desc(resultados.criadoEm))
     .limit(LIMIT);
 
   const exportQuery = new URLSearchParams();
-  if (examId) exportQuery.set("examId", String(examId));
+  if (provaId) exportQuery.set("examId", String(provaId));
   if (school) exportQuery.set("school", school);
   if (studentClass) exportQuery.set("class", studentClass);
   if (q) exportQuery.set("search", q);
   const qs = exportQuery.toString();
 
-  const hasFilters = Boolean(school || studentClass || examId || q);
+  const hasFilters = Boolean(school || studentClass || provaId || q);
 
   return (
     <div>
@@ -111,9 +111,9 @@ export default async function AdminRespostasPage({
               />
             </div>
           </div>
-          <SelectField name="prova" label="Prova" defaultValue={examId ? String(examId) : ""} options={[
+          <SelectField name="prova" label="Prova" defaultValue={provaId ? String(provaId) : ""} options={[
             { value: "", label: "Todas as provas" },
-            ...examRows.map((e) => ({ value: String(e.id), label: e.title })),
+            ...provaRows.map((e) => ({ value: String(e.id), label: e.titulo })),
           ]} />
           <SelectField name="escola" label="Escola" defaultValue={school} options={[
             { value: "", label: "Todas as escolas" },
@@ -175,28 +175,24 @@ export default async function AdminRespostasPage({
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">
                     {r.numeroChamada === null ? "—" : String(r.numeroChamada).padStart(3, "0")}
                   </td>
-                  <td className="px-4 py-3 font-semibold text-slate-800">{r.studentName}</td>
-                  <td className="px-4 py-3 text-slate-600">{r.studentClass}</td>
-                  <td className="px-4 py-3 text-slate-600">{r.school}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-800">{r.alunoNome}</td>
+                  <td className="px-4 py-3 text-slate-600">{r.alunoTurma}</td>
+                  <td className="px-4 py-3 text-slate-600">{r.escolaNome}</td>
                   <td className="max-w-[200px] truncate px-4 py-3 text-slate-600">
                     <Link
-                      href={`/professor/exames/${r.examId}`}
+                      href={`/professor/exames/${r.provaId}`}
                       className="hover:text-indigo-600 hover:underline"
                     >
-                      {r.examTitle}
+                      {r.provaTitulo}
                     </Link>
                   </td>
                   <td className="px-4 py-3">
-                    {r.score === null ? (
-                      <span className="text-slate-400">—</span>
-                    ) : (
-                      <span className="font-bold text-indigo-700">{formatScore(r.score)}</span>
-                    )}
+                    <span className="font-bold text-indigo-700">{formatScore(Number(r.nota))}</span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {r.totalMultiple > 0 ? `${r.correctCount}/${r.totalMultiple}` : "—"}
+                    {r.acertos + r.erros > 0 ? `${r.acertos}/${r.acertos + r.erros}` : "—"}
                   </td>
-                  <td className="px-4 py-3 text-slate-500">{formatDateTime(r.submittedAt)}</td>
+                  <td className="px-4 py-3 text-slate-500">{formatDateTime(r.criadoEm)}</td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/admin/respostas/${r.id}`}
