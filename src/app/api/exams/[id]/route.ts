@@ -290,9 +290,9 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   if (!canAccess(user, prova)) return NextResponse.json({ error: "Não autorizado." }, { status: 403 });
 
   const [{ total }] = await db
-    .select({ total: db.$count(resultados) })
+    .select({ total: count() })
     .from(resultados)
-    .where(and(eq(resultados.provaId, id)));
+    .where(eq(resultados.provaId, id));
 
   if (Number(total) > 0 && prova.status === "active") {
     return NextResponse.json(
