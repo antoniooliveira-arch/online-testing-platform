@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { alternativas, provas, questoes } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
-import { parseProvaRequest, validateDeadlineForPublish } from "@/lib/exam-validation";
+import { parseProvaRequest, resolveTurmaId, validateDeadlineForPublish } from "@/lib/exam-validation";
 import { generateSlug } from "@/lib/utils";
 
 /** Cria uma nova prova (rascunho ou publicada). */
@@ -20,6 +20,7 @@ export async function POST(req: Request) {
   }
 
   const provaId = await db.transaction(async (tx) => {
+    const turmaId = await resolveTurmaId(value.escolaId, value.turma);
     const codigo = publish ? generateSlug() : null;
     const [prova] = await tx
       .insert(provas)
@@ -27,6 +28,7 @@ export async function POST(req: Request) {
         titulo: value.titulo,
         disciplina: value.disciplina,
         turma: value.turma,
+        turmaId,
         escolaId: value.escolaId,
         instrucoes: value.instrucoes,
         dataInicio: value.dataInicio,

@@ -1,4 +1,7 @@
+import { and, eq } from "drizzle-orm";
 import type { Prova } from "@/db/schema";
+import { db } from "@/db";
+import { turmas } from "@/db/schema";
 
 export type AlternativaInput = { letra: string; texto: string; correta: boolean };
 
@@ -121,6 +124,17 @@ export function validateDeadlineForPublish(dataFim: Date | null): string | null 
 
 export function isDraft(prova: Pick<Prova, "status">): boolean {
   return prova.status === "draft";
+}
+
+/** Resolve a turma (UUID) a partir da escola e do nome da turma informados. */
+export async function resolveTurmaId(escolaId: string | null, turma: string): Promise<string | null> {
+  if (!escolaId || !turma) return null;
+  const [row] = await db
+    .select({ id: turmas.id })
+    .from(turmas)
+    .where(and(eq(turmas.escolaId, escolaId), eq(turmas.nome, turma)))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 /** Tamanho máximo do PDF da prova (limite de corpo do Vercel é 4.5MB). */

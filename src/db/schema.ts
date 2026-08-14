@@ -44,13 +44,18 @@ export const turmas = pgTable(
 );
 
 /** Alunos (único registro por pessoa, sem turma). */
-export const alunos = pgTable("alunos", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  nome: text("nome").notNull(),
-  matricula: text("matricula"),
-  numeroChamada: integer("numero_chamada"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const alunos = pgTable(
+  "alunos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    nome: text("nome").notNull(),
+    matricula: text("matricula"),
+    numeroChamada: integer("numero_chamada"),
+    senhaHash: text("senha_hash"), // login do aluno: hash bcrypt da senha (padrão compartilhado)
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("alunos_nome_idx").on(t.nome)]
+);
 
 /** Matrículas: liga o aluno à turma em um ano letivo. */
 export const matriculas = pgTable(

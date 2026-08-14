@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { alternativas, provas, questoes, resultados } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
-import { parseProvaPayload, parseProvaRequest, validateDeadlineForPublish } from "@/lib/exam-validation";
+import { parseProvaPayload, parseProvaRequest, resolveTurmaId, validateDeadlineForPublish } from "@/lib/exam-validation";
 import { generateSlug } from "@/lib/utils";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -121,6 +121,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     }
 
     await db.transaction(async (tx) => {
+      const turmaId = await resolveTurmaId(value.escolaId, value.turma);
       const pdfFields: Record<string, unknown> = {};
       if (pdf) {
         pdfFields.arquivoNome = pdf.name;
@@ -138,6 +139,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
           titulo: value.titulo,
           disciplina: value.disciplina,
           turma: value.turma,
+          turmaId,
           escolaId: value.escolaId,
           instrucoes: value.instrucoes,
           dataInicio: value.dataInicio,
@@ -235,12 +237,14 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
 
   await db.transaction(async (tx) => {
+    const turmaId = await resolveTurmaId(value.escolaId, value.turma);
     await tx
       .update(provas)
       .set({
         titulo: value.titulo,
         disciplina: value.disciplina,
         turma: value.turma,
+        turmaId,
         escolaId: value.escolaId,
         instrucoes: value.instrucoes,
         dataInicio: value.dataInicio,
