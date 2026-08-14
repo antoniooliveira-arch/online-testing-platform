@@ -1,0 +1,122 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  BarChart3,
+  ClipboardList,
+  FilePlus2,
+  GraduationCap,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+
+type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
+
+const ADMIN_NAV: NavItem[] = [
+  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/respostas", label: "Respostas", icon: ListChecks },
+  { href: "/admin/provas", label: "Provas", icon: ClipboardList },
+];
+
+const TEACHER_NAV: NavItem[] = [
+  { href: "/professor", label: "Minhas provas", icon: ClipboardList },
+  { href: "/professor/nova", label: "Nova prova", icon: FilePlus2 },
+];
+
+export default function Shell({
+  user,
+  children,
+}: {
+  user: { name: string; role: string };
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const isAdmin = user.role === "admin";
+  const nav = isAdmin ? ADMIN_NAV : TEACHER_NAV;
+  const home = isAdmin ? "/admin" : "/professor";
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+          <Link href={home} className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white">
+              <GraduationCap className="h-5 w-5" />
+            </span>
+            <div className="leading-tight">
+              <p className="text-sm font-bold tracking-tight text-slate-900">
+                Avalia<span className="text-indigo-600">Lab</span>
+              </p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                {isAdmin ? "Administração" : "Painel do professor"}
+              </p>
+            </div>
+          </Link>
+
+          <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto sm:order-none sm:w-auto sm:flex-1">
+            {nav.map((item) => {
+              const active =
+                item.href === "/professor" || item.href === "/admin"
+                  ? pathname === item.href
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition",
+                    active
+                      ? "bg-indigo-50 text-indigo-700"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  )}
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="ml-auto flex items-center gap-3">
+            <div className="hidden items-center gap-2 sm:flex">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">
+                {user.name.charAt(0).toUpperCase()}
+              </span>
+              <div className="leading-tight">
+                <p className="text-sm font-semibold text-slate-800">{user.name}</p>
+                <p className="text-[11px] text-slate-400">{isAdmin ? "Administrador" : "Professor(a)"}</p>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              title="Sair"
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sair</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8">{children}</main>
+
+      <footer className="border-t border-slate-200 bg-white py-5">
+        <p className="flex items-center justify-center gap-1.5 text-xs text-slate-400">
+          <BarChart3 className="h-3.5 w-3.5" />
+          AvaliaLab — plataforma de provas online
+        </p>
+      </footer>
+    </div>
+  );
+}
