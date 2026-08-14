@@ -166,6 +166,9 @@ export default function HomePage() {
             Dados dos alunos tratados com segurança e privacidade.
           </p>
         </div>
+        <p className="mt-4 text-center text-[10px] font-bold text-slate-500">
+          Desenvolvido pelo Departamento de Técnologia/SME.
+        </p>
       </footer>
     </div>
   );

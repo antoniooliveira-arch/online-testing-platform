@@ -15,15 +15,11 @@ import { cn } from "@/lib/utils";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }> };
 
-const ADMIN_NAV: NavItem[] = [
+const NAV: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/respostas", label: "Respostas", icon: ListChecks },
-  { href: "/admin/provas", label: "Provas", icon: ClipboardList },
-];
-
-const TEACHER_NAV: NavItem[] = [
-  { href: "/professor", label: "Minhas provas", icon: ClipboardList },
+  { href: "/professor", label: "Provas", icon: ClipboardList },
   { href: "/professor/nova", label: "Nova prova", icon: FilePlus2 },
+  { href: "/admin/respostas", label: "Respostas", icon: ListChecks },
 ];
 
 export default function Shell({
@@ -35,9 +31,8 @@ export default function Shell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isAdmin = user.role === "admin";
-  const nav = isAdmin ? ADMIN_NAV : TEACHER_NAV;
-  const home = isAdmin ? "/admin" : "/professor";
+  const nav = NAV;
+  const home = "/admin";
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -58,7 +53,7 @@ export default function Shell({
                 Avalia<span className="text-indigo-600">Lab</span>
               </p>
               <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                {isAdmin ? "Administração" : "Painel do professor"}
+                Professor & Administrador
               </p>
             </div>
           </Link>
@@ -94,7 +89,7 @@ export default function Shell({
               </span>
               <div className="leading-tight">
                 <p className="text-sm font-semibold text-slate-800">{user.name}</p>
-                <p className="text-[11px] text-slate-400">{isAdmin ? "Administrador" : "Professor(a)"}</p>
+                <p className="text-[11px] text-slate-400">Professor & Administrador</p>
               </div>
             </div>
             <button
@@ -115,6 +110,9 @@ export default function Shell({
         <p className="flex items-center justify-center gap-1.5 text-xs text-slate-400">
           <BarChart3 className="h-3.5 w-3.5" />
           AvaliaLab — plataforma de provas online
+        </p>
+        <p className="mt-1 text-center text-[10px] font-bold text-slate-400">
+          Desenvolvido pelo Departamento de Técnologia/SME.
         </p>
       </footer>
     </div>

@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Info, Loader2, LogIn } from "lucide-react";
+import { Loader2, LogIn } from "lucide-react";
 
 export default function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ export default function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name, password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -38,20 +38,21 @@ export default function LoginForm() {
   return (
     <div>
       <h2 className="text-2xl font-bold text-slate-900">Entrar na plataforma</h2>
-      <p className="mt-1 text-sm text-slate-500">Use suas credenciais de professor ou administrador.</p>
+      <p className="mt-1 text-sm text-slate-500">Acesso único para professores e administradores.</p>
 
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div>
-          <label htmlFor="email" className="mb-1 block text-sm font-medium text-slate-700">
-            E-mail
+          <label htmlFor="name" className="mb-1 block text-sm font-medium text-slate-700">
+            Nome
           </label>
           <input
-            id="email"
-            type="email"
+            id="name"
+            type="text"
+            autoComplete="username"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="voce@escola.com"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="admin@"
             className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
           />
         </div>
@@ -83,26 +84,6 @@ export default function LoginForm() {
           {loading ? "Entrando..." : "Entrar"}
         </button>
       </form>
-
-      <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
-        <p className="flex items-center gap-2 text-sm font-semibold text-indigo-800">
-          <Info className="h-4 w-4" /> Contas de demonstração
-        </p>
-        <ul className="mt-2 space-y-1.5 text-xs text-indigo-900/80">
-          <li>
-            <span className="font-mono">admin@avalialab.com.br</span> · senha{" "}
-            <span className="font-mono">admin123</span> — administrador
-          </li>
-          <li>
-            <span className="font-mono">ana.souza@avalialab.com.br</span> · senha{" "}
-            <span className="font-mono">prof123</span> — professora
-          </li>
-          <li>
-            <span className="font-mono">carlos.lima@avalialab.com.br</span> · senha{" "}
-            <span className="font-mono">prof123</span> — professor
-          </li>
-        </ul>
-      </div>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "./index";
-import { answers, exams, questions, submissions, users } from "./schema";
+import { answers, exams, questions, submissions, users, type User } from "./schema";
 
 const NAMES = [
   "Maria Eduarda Silva",
@@ -57,32 +57,46 @@ function mulberry32(seed: number) {
 }
 
 async function main() {
-  const [existing] = await db.select({ id: users.id }).from(users).limit(1);
-  if (existing) {
-    console.log("Seed: banco já populado, pulando.");
-    return;
-  }
-
   const hash = (pw: string) => bcrypt.hashSync(pw, 10);
 
-  const [admin] = await db
-    .insert(users)
-    .values([
-      { name: "Administrador Geral", email: "admin@avalialab.com.br", passwordHash: hash("admin123"), role: "admin", school: "Secretaria de Educação" },
-    ])
-    .returning();
-  const [ana] = await db
-    .insert(users)
-    .values([
-      { name: "Ana Souza", email: "ana.souza@avalialab.com.br", passwordHash: hash("prof123"), role: "teacher", school: "E.E. Monteiro Lobato" },
-    ])
-    .returning();
-  const [carlos] = await db
-    .insert(users)
-    .values([
-      { name: "Carlos Lima", email: "carlos.lima@avalialab.com.br", passwordHash: hash("prof123"), role: "teacher", school: "Colégio Dom Pedro II" },
-    ])
-    .returning();
+  // Acesso único: nome "admin@" / senha "123" — professor e administrador
+  let admin: User;
+  const [existingAdmin] = await db
+    .select()
+    .from(users)
+    .where(inArray(users.email, ["admin@", "admin", "admin@avalialab.com.br"]))
+    .limit(1);
+
+  if (existingAdmin) {
+    [admin] = await db
+      .update(users)
+      .set({ name: "admin@", email: "admin@", passwordHash: hash("123"), role: "admin", school: "Secretaria de Educação" })
+      .where(eq(users.id, existingAdmin.id))
+      .returning();
+  } else {
+    [admin] = await db
+      .insert(users)
+      .values({ name: "admin@", email: "admin@", passwordHash: hash("123"), role: "admin", school: "Secretaria de Educação" })
+      .returning();
+  }
+
+  // Remove contas de demonstração antigas, transferindo as provas para o acesso único
+  const demoAccounts = await db
+    .select()
+    .from(users)
+    .where(inArray(users.email, ["ana.souza@avalialab.com.br", "carlos.lima@avalialab.com.br"]));
+  for (const acc of demoAccounts) {
+    await db.update(exams).set({ teacherId: admin.id }).where(eq(exams.teacherId, acc.id));
+    await db.delete(users).where(eq(users.id, acc.id));
+  }
+
+  // Se já existem provas, mantém os dados existentes e apenas garante o acesso único
+  const [existingExam] = await db.select({ id: exams.id }).from(exams).limit(1);
+  if (existingExam) {
+    console.log("Seed: dados existentes mantidos.");
+    console.log("  • Acesso único: nome admin@ / senha 123 (professor e administrador)");
+    return;
+  }
 
   const days = (n: number) => new Date(Date.now() + n * 24 * 60 * 60 * 1000);
   const hoursAgo = (n: number) => new Date(Date.now() - n * 60 * 60 * 1000);
@@ -93,7 +107,7 @@ async function main() {
     .values({
       title: "Avaliação de Matemática — 3º bimestre",
       description: "Leia cada questão com atenção. Use rascunho para os cálculos e envie ao final.",
-      teacherId: ana.id,
+      teacherId: admin.id,
       status: "active",
       deadline: days(7),
       targetClasses: "9º ano A, 9º ano B",
@@ -134,7 +148,7 @@ async function main() {
     .values({
       title: "Prova de Ciências — O Sistema Solar",
       description: "Responda as questões sobre os planetas e o universo. Boa sorte!",
-      teacherId: carlos.id,
+      teacherId: admin.id,
       status: "active",
       deadline: days(5),
       targetClasses: "8º ano A, 8º ano B",
@@ -162,7 +176,7 @@ async function main() {
     .values({
       title: "Redação — Literatura Brasileira",
       description: "Produza um texto dissertativo sobre o papel da literatura na formação do cidadão.",
-      teacherId: ana.id,
+      teacherId: admin.id,
       status: "finished",
       deadline: hoursAgo(24 * 3),
       targetClasses: "9º ano A",
@@ -189,7 +203,7 @@ async function main() {
   await db.insert(exams).values({
     title: "Quiz de História — Brasil Colônia",
     description: "Quiz rápido para revisão antes da prova principal.",
-    teacherId: carlos.id,
+    teacherId: admin.id,
     status: "draft",
     deadline: days(10),
     targetClasses: "8º ano A",
@@ -264,9 +278,7 @@ async function main() {
   await seedSubmissions(essayExam.id, essayQs, 9, ["9º ano A"]);
 
   console.log("Seed concluído:");
-  console.log("  • admin@avalialab.com.br / admin123");
-  console.log("  • ana.souza@avalialab.com.br / prof123");
-  console.log("  • carlos.lima@avalialab.com.br / prof123");
+  console.log("  • Acesso único: nome admin@ / senha 123 (professor e administrador)");
   console.log("  • Prova aluno (Matemática): /prova/MAT9B3M");
   console.log("  • Prova aluno (Ciências): /prova/CIEN8SOL");
 }

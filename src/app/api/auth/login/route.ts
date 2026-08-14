@@ -7,16 +7,16 @@ import { createSessionToken, SESSION_COOKIE, SESSION_MAX_AGE } from "@/lib/auth"
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
   const password = typeof body?.password === "string" ? body.password : "";
 
-  if (!email || !password) {
-    return NextResponse.json({ error: "Informe e-mail e senha." }, { status: 400 });
+  if (!name || !password) {
+    return NextResponse.json({ error: "Informe nome e senha." }, { status: 400 });
   }
 
-  const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const [user] = await db.select().from(users).where(eq(users.name, name)).limit(1);
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    return NextResponse.json({ error: "E-mail ou senha inválidos." }, { status: 401 });
+    return NextResponse.json({ error: "Nome ou senha inválidos." }, { status: 401 });
   }
 
   const token = createSessionToken(user.id);
