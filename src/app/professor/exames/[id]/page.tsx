@@ -16,7 +16,7 @@ import ExamActions from "@/components/exam-actions";
 import ShareCard from "@/components/share-card";
 import { StatusBadge } from "@/app/professor/page";
 import { db } from "@/db";
-import { exams, questions, submissions, users } from "@/db/schema";
+import { alunos, exams, questions, submissions, users } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { hardestQuestions } from "@/lib/exports";
 import { formatDateTime, formatScore, isExamClosed } from "@/lib/utils";
@@ -34,8 +34,19 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
   const [teacher] = await db.select({ name: users.name }).from(users).where(eq(users.id, exam.teacherId)).limit(1);
   const qs = await db.select().from(questions).where(eq(questions.examId, id)).orderBy(asc(questions.order));
   const subs = await db
-    .select()
+    .select({
+      id: submissions.id,
+      studentName: submissions.studentName,
+      studentClass: submissions.studentClass,
+      school: submissions.school,
+      numeroChamada: alunos.numeroChamada,
+      score: submissions.score,
+      correctCount: submissions.correctCount,
+      totalMultiple: submissions.totalMultiple,
+      submittedAt: submissions.submittedAt,
+    })
     .from(submissions)
+    .leftJoin(alunos, eq(submissions.alunoId, alunos.id))
     .where(eq(submissions.examId, id))
     .orderBy(asc(submissions.submittedAt));
 
@@ -144,6 +155,7 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+                  <th className="px-4 py-3 font-semibold">Nº</th>
                   <th className="px-4 py-3 font-semibold">Aluno</th>
                   <th className="px-4 py-3 font-semibold">Turma</th>
                   <th className="px-4 py-3 font-semibold">Escola</th>
@@ -156,6 +168,9 @@ export default async function ExamDetailPage({ params }: { params: Promise<{ id:
               <tbody>
                 {subs.map((s) => (
                   <tr key={s.id} className="border-b border-slate-50 transition hover:bg-indigo-50/30">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                      {s.numeroChamada === null ? "—" : String(s.numeroChamada).padStart(3, "0")}
+                    </td>
                     <td className="px-4 py-3 font-semibold text-slate-800">{s.studentName}</td>
                     <td className="px-4 py-3 text-slate-600">{s.studentClass}</td>
                     <td className="px-4 py-3 text-slate-600">{s.school}</td>

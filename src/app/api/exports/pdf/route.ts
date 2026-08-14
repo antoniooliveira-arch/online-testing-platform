@@ -81,8 +81,8 @@ export async function GET(req: Request) {
 
   const hasPerQuestion = Boolean(exam && questions.length > 0);
   const head = hasPerQuestion
-    ? ["Aluno", "Turma", "Escola", "Nota", "Acertos", ...questions.map((_, i) => `Q${i + 1}`)]
-    : ["Aluno", "Turma", "Escola", "Prova", "Nota", "Acertos", "Enviada em"];
+    ? ["Aluno", "Nº", "Turma", "Escola", "Nota", "Acertos", ...questions.map((_, i) => `Q${i + 1}`)]
+    : ["Aluno", "Nº", "Turma", "Escola", "Prova", "Nota", "Acertos", "Enviada em"];
 
   if (rows.length > 0) {
     // Busca as respostas por questão quando filtrado por uma única prova
@@ -102,7 +102,12 @@ export async function GET(req: Request) {
       startY: afterSummary + 3,
       head: [head],
       body: rows.map((r) => {
-        const base = [r.studentName, r.studentClass, r.school];
+        const base = [
+          r.studentName,
+          r.numeroChamada === null ? "—" : String(r.numeroChamada).padStart(3, "0"),
+          r.studentClass,
+          r.school,
+        ];
         const score = r.score === null ? "—" : r.score.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
         if (!hasPerQuestion) {
           return [...base, r.examTitle, score, `${r.correctCount}/${r.totalMultiple}`, formatDateTime(r.submittedAt)];

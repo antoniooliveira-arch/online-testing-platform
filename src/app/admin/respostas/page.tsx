@@ -2,7 +2,7 @@ import Link from "next/link";
 import { and, asc, desc, eq, ilike } from "drizzle-orm";
 import { FileDown, FileText, FilterX, ListChecks, Search } from "lucide-react";
 import { db } from "@/db";
-import { exams, submissions } from "@/db/schema";
+import { alunos, exams, submissions } from "@/db/schema";
 import { formatDateTime, formatScore } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,7 @@ export default async function AdminRespostasPage({
       studentName: submissions.studentName,
       studentClass: submissions.studentClass,
       school: submissions.school,
+      numeroChamada: alunos.numeroChamada,
       score: submissions.score,
       correctCount: submissions.correctCount,
       totalMultiple: submissions.totalMultiple,
@@ -56,6 +57,7 @@ export default async function AdminRespostasPage({
     })
     .from(submissions)
     .innerJoin(exams, eq(submissions.examId, exams.id))
+    .leftJoin(alunos, eq(submissions.alunoId, alunos.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(submissions.submittedAt))
     .limit(LIMIT);
@@ -149,6 +151,7 @@ export default async function AdminRespostasPage({
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
+              <th className="px-4 py-3 font-semibold">Nº</th>
               <th className="px-4 py-3 font-semibold">Aluno</th>
               <th className="px-4 py-3 font-semibold">Turma</th>
               <th className="px-4 py-3 font-semibold">Escola</th>
@@ -162,13 +165,16 @@ export default async function AdminRespostasPage({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
                   Nenhuma resposta encontrada com os filtros selecionados.
                 </td>
               </tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.id} className="border-b border-slate-50 transition hover:bg-indigo-50/30">
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                    {r.numeroChamada === null ? "—" : String(r.numeroChamada).padStart(3, "0")}
+                  </td>
                   <td className="px-4 py-3 font-semibold text-slate-800">{r.studentName}</td>
                   <td className="px-4 py-3 text-slate-600">{r.studentClass}</td>
                   <td className="px-4 py-3 text-slate-600">{r.school}</td>

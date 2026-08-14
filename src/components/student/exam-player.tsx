@@ -15,7 +15,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { renderPrompt } from "@/lib/markdown";
-import { cn, formatDateTime, LETTERS } from "@/lib/utils";
+import { cn, formatDateTime, LETTERS, normalize } from "@/lib/utils";
 
 type StudentQuestion = {
   id: number;
@@ -33,7 +33,25 @@ type ExamInfo = {
   displayMode: "list" | "paged";
 };
 
-type Identify = { studentName: string; studentClass: string; school: string };
+type SchoolAluno = { id: string; nome: string; numeroChamada: number | null };
+type SchoolTurma = {
+  id: string;
+  nome: string;
+  ano: string;
+  turno: string;
+  professor: string | null;
+  alunos: SchoolAluno[];
+};
+type SchoolOption = { id: string; nome: string; turmas: SchoolTurma[] };
+
+type Identify = {
+  studentName: string;
+  studentClass: string;
+  school: string;
+  escolaId: string;
+  turmaId: string;
+  alunoId: string;
+};
 type AnswerMap = Record<number, { selectedIndex: number | null; essayText: string }>;
 
 type Result = { correctCount: number; totalMultiple: number; score: number | null };
@@ -46,7 +64,15 @@ export default function ExamPlayer({ code }: { code: string }) {
   const [stage, setStage] = useState<Stage>("loading");
   const [exam, setExam] = useState<ExamInfo | null>(null);
   const [questions, setQuestions] = useState<StudentQuestion[]>([]);
-  const [identify, setIdentify] = useState<Identify>({ studentName: "", studentClass: "", school: "" });
+  const [identify, setIdentify] = useState<Identify>({
+    studentName: "",
+    studentClass: "",
+    school: "",
+    escolaId: "",
+    turmaId: "",
+    alunoId: "",
+  });
+  const [schoolData, setSchoolData] = useState<SchoolOption[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState("");
@@ -84,6 +110,26 @@ export default function ExamPlayer({ code }: { code: string }) {
       cancelled = true;
     };
   }, [code]);
+
+  // Carrega as escolas/turmas/alunos reais para a identificação
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/escolas")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.ok) setSchoolData(data.escolas);
+      })
+      .catch(() => {
+        /* mantém identificação livre se a consulta falhar */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedEscola = schoolData.find((e) => e.id === identify.escolaId);
+  const selectedTurma = selectedEscola?.turmas.find((t) => t.id === identify.turmaId);
+  const turmaAlunos = selectedTurma?.alunos ?? [];
 
   // Restaura o rascunho salvo automaticamente
   useEffect(() => {
@@ -141,18 +187,31 @@ export default function ExamPlayer({ code }: { code: string }) {
   function startExam(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (identify.studentName.trim().length < 3) {
+    if (!identify.escolaId) {
+      setError("Selecione a sua escola.");
+      return;
+    }
+    if (!identify.turmaId) {
+      setError("Selecione a sua turma.");
+      return;
+    }
+    const name = identify.studentName.trim();
+    if (name.length < 3) {
       setError("Preencha seu nome completo.");
       return;
     }
-    if (!identify.studentClass.trim()) {
-      setError("Informe a sua turma.");
+    const aluno = findAluno(turmaAlunos, name);
+    if (!aluno) {
+      setError("Seu nome não foi encontrado na turma selecionada. Escolha o nome completo na lista de sugestões.");
       return;
     }
-    if (!identify.school.trim()) {
-      setError("Informe a sua escola.");
-      return;
-    }
+    setIdentify((prev) => ({
+      ...prev,
+      studentName: aluno.nome,
+      studentClass: selectedTurma!.nome,
+      school: selectedEscola!.nome,
+      alunoId: aluno.id,
+    }));
     setPage(0);
     setStage("exam");
   }
@@ -185,7 +244,11 @@ export default function ExamPlayer({ code }: { code: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           examSlug: code,
-          ...identify,
+          studentName: identify.studentName,
+          studentClass: identify.studentClass,
+          school: identify.school,
+          alunoId: identify.alunoId,
+          turmaId: identify.turmaId,
           answers: questions.map((q) => {
             const a = answers[q.id];
             return {
@@ -283,25 +346,49 @@ export default function ExamPlayer({ code }: { code: string }) {
             Preencha seus dados para liberar o acesso às questões — sem necessidade de senha.
           </p>
           <form onSubmit={startExam} className="mt-4 space-y-4">
-            <Field
-              label="Nome completo"
-              value={identify.studentName}
-              onChange={(v) => setIdentify((p) => ({ ...p, studentName: v }))}
-              placeholder="Ex.: Maria Eduarda Silva"
-            />
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                label="Turma"
-                value={identify.studentClass}
-                onChange={(v) => setIdentify((p) => ({ ...p, studentClass: v }))}
-                placeholder="Ex.: 9º ano A"
-              />
-              <Field
+              <Select
                 label="Escola"
-                value={identify.school}
-                onChange={(v) => setIdentify((p) => ({ ...p, school: v }))}
-                placeholder="Ex.: E.E. Monteiro Lobato"
+                value={identify.escolaId}
+                onChange={(v) =>
+                  setIdentify((p) => ({ ...p, escolaId: v, turmaId: "", alunoId: "", studentClass: "", school: "" }))
+                }
+                placeholder="Selecione a escola"
+                options={schoolData.map((e) => ({ value: e.id, label: e.nome }))}
               />
+              <Select
+                label="Turma"
+                value={identify.turmaId}
+                onChange={(v) =>
+                  setIdentify((p) => ({ ...p, turmaId: v, alunoId: "", studentClass: "", school: "" }))
+                }
+                placeholder={selectedEscola ? "Selecione a turma" : "Escolha a escola primeiro"}
+                disabled={!selectedEscola}
+                options={selectedEscola?.turmas.map((t) => ({ value: t.id, label: t.nome })) ?? []}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Nome completo</label>
+              <input
+                list="alunos-datalist"
+                value={identify.studentName}
+                onChange={(e) => setIdentify((p) => ({ ...p, studentName: e.target.value }))}
+                placeholder={turmaAlunos.length > 0 ? "Digite ou escolha seu nome na lista" : "Selecione a turma para ver os alunos"}
+                required
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              />
+              <datalist id="alunos-datalist">
+                {turmaAlunos.map((a) => (
+                  <option key={a.id} value={a.nome} />
+                ))}
+              </datalist>
+              {selectedTurma && turmaAlunos.length > 0 && (
+                <p className="mt-1.5 text-xs text-slate-400">
+                  {selectedTurma.nome} · {selectedTurma.turno}
+                  {selectedTurma.professor ? ` · Prof. ${selectedTurma.professor}` : ""} ·{" "}
+                  {turmaAlunos.length} {turmaAlunos.length === 1 ? "aluno" : "alunos"}
+                </p>
+              )}
             </div>
             {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p>}
             <button
@@ -512,29 +599,54 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
   return <div className={cn("rounded-2xl bg-white p-6 shadow-xl shadow-indigo-950/20 sm:p-8", className)}>{children}</div>;
 }
 
-function Field({
+function Select({
   label,
   value,
   onChange,
   placeholder,
+  options,
+  disabled,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
 }) {
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-slate-700">{label}</label>
-      <input
+      <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        required
-        className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-      />
+        disabled={disabled}
+        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+      >
+        <option value="" disabled>
+          {placeholder ?? "Selecione..."}
+        </option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
+}
+
+/** Encontra o aluno da turma pelo nome digitado (ignora acentos/caixa). */
+function findAluno(list: { id: string; nome: string }[], typed: string): { id: string; nome: string } | null {
+  const norm = normalize(typed);
+  if (!norm) return null;
+  const exact = list.filter((a) => normalize(a.nome) === norm);
+  if (exact.length === 1) return exact[0];
+  if (norm.length >= 5) {
+    const candidates = list.filter((a) => normalize(a.nome).includes(norm));
+    if (candidates.length === 1) return candidates[0];
+  }
+  return null;
 }
 
 function QuestionCard({

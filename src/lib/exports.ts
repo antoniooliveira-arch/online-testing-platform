@@ -1,6 +1,6 @@
 import { asc, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { answers, exams, questions, submissions, type User } from "@/db/schema";
+import { alunos, answers, exams, questions, submissions, type User } from "@/db/schema";
 import { stripMarkdown } from "@/lib/markdown";
 import { buildCsv, formatDateTime, formatScore, LETTERS } from "@/lib/utils";
 
@@ -19,6 +19,7 @@ export type ExportRow = {
   studentName: string;
   studentClass: string;
   school: string;
+  numeroChamada: number | null;
   score: number | null;
   correctCount: number;
   totalMultiple: number;
@@ -60,6 +61,7 @@ export async function fetchExportData(
       studentName: submissions.studentName,
       studentClass: submissions.studentClass,
       school: submissions.school,
+      numeroChamada: alunos.numeroChamada,
       score: submissions.score,
       correctCount: submissions.correctCount,
       totalMultiple: submissions.totalMultiple,
@@ -67,6 +69,7 @@ export async function fetchExportData(
     })
     .from(submissions)
     .innerJoin(exams, eq(submissions.examId, exams.id))
+    .leftJoin(alunos, eq(submissions.alunoId, alunos.id))
     .where(conditions.length > 0 ? sql`${sql.join(conditions, sql` and `)}` : undefined)
     .orderBy(desc(submissions.submittedAt));
 
@@ -98,6 +101,7 @@ export async function buildSubmissionCsv(
 
   const header: string[] = [
     "Aluno",
+    "Nº chamada",
     "Turma",
     "Escola",
     "Prova",
@@ -113,6 +117,7 @@ export async function buildSubmissionCsv(
   const body: (string | number)[][] = rows.map((r) => {
     const base: (string | number)[] = [
       r.studentName,
+      r.numeroChamada === null ? "" : String(r.numeroChamada).padStart(3, "0"),
       r.studentClass,
       r.school,
       r.examTitle,

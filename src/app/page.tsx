@@ -30,9 +30,9 @@ export default function HomePage() {
             <a href="#como-funciona" className="transition hover:text-indigo-600">
               Como funciona
             </a>
-            <a href="#acessar" className="transition hover:text-indigo-600">
-              Responder prova
-            </a>
+            <Link href="/aluno" className="transition hover:text-indigo-600">
+              Sou aluno
+            </Link>
             <Link href="/login" className="transition hover:text-indigo-600">
               Área do professor
             </Link>
@@ -114,7 +114,7 @@ export default function HomePage() {
       <section className="border-t border-slate-200 bg-white py-16">
         <div className="mx-auto grid max-w-6xl gap-6 px-4 md:grid-cols-3">
           <Link
-            href="#acessar"
+            href="/aluno"
             className="group rounded-2xl border-2 border-slate-100 bg-slate-50 p-6 transition hover:border-indigo-200 hover:bg-indigo-50/50"
           >
             <Users className="h-7 w-7 text-indigo-600" />
