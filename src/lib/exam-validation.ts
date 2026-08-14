@@ -99,3 +99,83 @@ export function validateDeadlineForPublish(deadline: Date | null): string | null
 export function isDraft(exam: Pick<Exam, "status">): boolean {
   return exam.status === "draft";
 }
+
+/** Tamanho máximo do PDF da prova (limite de corpo do Vercel é 4.5MB). */
+export const MAX_PDF_BYTES = 4_000_000;
+
+export type ExamPdfInput = { name: string; data: string; size: number };
+
+export type ExamRequestParsed = {
+  value: ExamInput;
+  publish: boolean;
+  pdf: ExamPdfInput | null;
+  removePdf: boolean;
+};
+
+/**
+ * Lê e valida o corpo da requisição de criação/edição de prova.
+ * Aceita tanto JSON (compatibilidade) quanto multipart/form-data (upload de PDF).
+ */
+export async function parseExamRequest(
+  req: Request
+): Promise<{ ok: true; parsed: ExamRequestParsed } | { ok: false; status: number; error: string }> {
+  const contentType = req.headers.get("content-type") ?? "";
+  const isMultipart = contentType.includes("multipart/form-data");
+
+  let body: Record<string, unknown>;
+  let publish = false;
+  let removePdf = false;
+  let pdfFile: File | null = null;
+
+  if (isMultipart) {
+    const fd = await req.formData().catch(() => null);
+    if (!fd) return { ok: false, status: 400, error: "Não foi possível ler o envio da prova." };
+    let questions: unknown = [];
+    const rawQuestions = fd.get("questions");
+    if (rawQuestions) {
+      try {
+        questions = JSON.parse(String(rawQuestions));
+      } catch {
+        return { ok: false, status: 400, error: "Dados das questões inválidos." };
+      }
+    }
+    body = {
+      title: fd.get("title"),
+      description: fd.get("description"),
+      deadline: fd.get("deadline"),
+      targetClasses: fd.get("targetClasses"),
+      displayMode: fd.get("displayMode"),
+      questions,
+    };
+    publish = fd.get("publish") === "1" || fd.get("publish") === "true";
+    removePdf = fd.get("removePdf") === "1" || fd.get("removePdf") === "true";
+    const file = fd.get("pdf");
+    if (file && typeof file === "object" && "arrayBuffer" in file) pdfFile = file as File;
+  } else {
+    body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+    publish = body.publish === true || body.status === "active";
+    removePdf = body.removePdf === true;
+  }
+
+  const parsed = parseExamPayload(body);
+  if (!parsed.ok) return { ok: false, status: 400, error: parsed.errors.join(" ") };
+  const { value } = parsed;
+
+  let pdf: ExamPdfInput | null = null;
+  if (pdfFile) {
+    if (pdfFile.size === 0) return { ok: false, status: 400, error: "O arquivo PDF está vazio." };
+    if (!pdfFile.name.toLowerCase().endsWith(".pdf")) {
+      return { ok: false, status: 400, error: "Envie um arquivo no formato PDF." };
+    }
+    if (pdfFile.size > MAX_PDF_BYTES) {
+      return { ok: false, status: 400, error: "O arquivo PDF deve ter no máximo 4 MB." };
+    }
+    const buf = Buffer.from(await pdfFile.arrayBuffer());
+    if (buf.length < 5 || buf.subarray(0, 5).toString("latin1") !== "%PDF-") {
+      return { ok: false, status: 400, error: "O arquivo enviado não é um PDF válido." };
+    }
+    pdf = { name: pdfFile.name, data: buf.toString("base64"), size: buf.length };
+  }
+
+  return { ok: true, parsed: { value, publish, pdf, removePdf } };
+}

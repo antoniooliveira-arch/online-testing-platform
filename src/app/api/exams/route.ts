@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { exams, questions } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
-import { parseExamPayload, validateDeadlineForPublish } from "@/lib/exam-validation";
+import { parseExamRequest, validateDeadlineForPublish } from "@/lib/exam-validation";
 import { generateSlug } from "@/lib/utils";
 
 /** Cria uma nova prova (rascunho ou publicada). */
@@ -11,13 +11,9 @@ export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
 
-  const body = await req.json().catch(() => null);
-  const parsed = parseExamPayload(body);
-  if (!parsed.ok) {
-    return NextResponse.json({ error: parsed.errors.join(" ") }, { status: 400 });
-  }
-  const { value } = parsed;
-  const publish = body?.publish === true || body?.status === "active";
+  const result = await parseExamRequest(req);
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+  const { value, publish, pdf } = result.parsed;
 
   if (publish) {
     const deadlineError = validateDeadlineForPublish(value.deadline);
@@ -37,6 +33,9 @@ export async function POST(req: Request) {
         targetClasses: value.targetClasses,
         displayMode: value.displayMode,
         slug,
+        pdfName: pdf?.name ?? null,
+        pdfData: pdf?.data ?? null,
+        pdfSize: pdf?.size ?? null,
         publishedAt: publish ? new Date() : null,
       })
       .returning({ id: exams.id });

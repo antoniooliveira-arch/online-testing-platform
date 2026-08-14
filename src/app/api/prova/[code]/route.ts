@@ -56,6 +56,7 @@ export async function GET(_req: Request, { params }: Ctx) {
       deadline: exam.deadline ? exam.deadline.toISOString() : null,
       displayMode: exam.displayMode,
       targetClasses: exam.targetClasses,
+      pdfName: exam.pdfName,
     },
     questions: qs.map((q) => ({
       id: q.id,

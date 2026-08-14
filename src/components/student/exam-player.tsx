@@ -8,6 +8,8 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardList,
+  ExternalLink,
+  FileText,
   GraduationCap,
   Loader2,
   SearchX,
@@ -31,6 +33,7 @@ type ExamInfo = {
   description: string;
   deadline: string | null;
   displayMode: "list" | "paged";
+  pdfName?: string | null;
 };
 
 type SchoolAluno = { id: string; nome: string; numeroChamada: number | null };
@@ -78,6 +81,7 @@ export default function ExamPlayer({ code }: { code: string }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [page, setPage] = useState(0);
+  const [showPdf, setShowPdf] = useState(false);
   const loadedRef = useRef(false);
   const storageKey = `${STORAGE_KEY_PREFIX}${code.toUpperCase()}`;
 
@@ -450,7 +454,7 @@ export default function ExamPlayer({ code }: { code: string }) {
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto max-w-3xl px-4 py-3">
+        <div className="mx-auto max-w-6xl px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
@@ -477,53 +481,120 @@ export default function ExamPlayer({ code }: { code: string }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 pb-32 pt-6">
-        {exam?.description && (
-          <p className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900/80">
-            {exam.description}
-          </p>
-        )}
+      <main className="mx-auto max-w-6xl px-4 pb-32 pt-6">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="mx-auto w-full max-w-3xl">
+            {exam?.description && (
+              <p className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900/80">
+                {exam.description}
+              </p>
+            )}
 
-        {paged && (
-          <div className="mb-4 flex items-center justify-between text-sm">
-            <p className="font-semibold text-slate-700">
-              Questão {page + 1} <span className="font-normal text-slate-400">de {questions.length}</span>
-            </p>
-            {exam?.deadline && (
-              <p className="text-xs text-slate-400">Prazo: {formatDateTime(exam.deadline)}</p>
+            {exam?.pdfName && (
+              <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                      <FileText className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-800">{exam.pdfName}</p>
+                      <p className="text-xs text-slate-400">Prova em PDF — você pode visualizar enquanto responde.</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <a
+                      href={`/api/prova/${encodeURIComponent(code)}/pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" /> Abrir em nova aba
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setShowPdf((v) => !v)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition",
+                        showPdf
+                          ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          : "bg-indigo-600 text-white hover:bg-indigo-500"
+                      )}
+                    >
+                      {showPdf ? "Ocultar PDF" : "Ver PDF"}
+                    </button>
+                  </div>
+                </div>
+                {showPdf && (
+                  <iframe
+                    src={`/api/prova/${encodeURIComponent(code)}/pdf`}
+                    title="Prova em PDF"
+                    className="mt-3 h-[70vh] w-full rounded-xl border border-slate-200 bg-slate-50"
+                  />
+                )}
+              </div>
+            )}
+
+            {paged && (
+              <div className="mb-4 flex items-center justify-between text-sm">
+                <p className="font-semibold text-slate-700">
+                  Questão {page + 1} <span className="font-normal text-slate-400">de {questions.length}</span>
+                </p>
+                {exam?.deadline && (
+                  <p className="text-xs text-slate-400">Prazo: {formatDateTime(exam.deadline)}</p>
+                )}
+              </div>
+            )}
+
+            {paged && current && (
+              <QuestionCard
+                question={current}
+                answer={answers[current.id]}
+                onAnswer={(value) => setAnswer(current, value)}
+              />
+            )}
+
+            {!paged &&
+              questions.map((q) => (
+                <QuestionCard
+                  key={q.id}
+                  question={q}
+                  answer={answers[q.id]}
+                  onAnswer={(value) => setAnswer(q, value)}
+                  id={`q-${q.id}`}
+                />
+              ))}
+
+            {error && (
+              <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                {error}
+              </p>
             )}
           </div>
-        )}
 
-        {paged && current && (
-          <QuestionCard
-            question={current}
-            answer={answers[current.id]}
-            onAnswer={(value) => setAnswer(current, value)}
-          />
-        )}
-
-        {!paged &&
-          questions.map((q) => (
-            <QuestionCard
-              key={q.id}
-              question={q}
-              answer={answers[q.id]}
-              onAnswer={(value) => setAnswer(q, value)}
-              id={`q-${q.id}`}
+          {/* Gabarito fixo à direita */}
+          <aside className="hidden lg:block">
+            <GabaritoPanel
+              questions={questions}
+              answers={answers}
+              paged={paged}
+              currentPage={page}
+              onMark={(q, index) => setAnswer(q, { selectedIndex: index })}
+              onNavigate={(index) => {
+                if (paged) setPage(index);
+                else
+                  document
+                    .getElementById(`q-${questions[index].id}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
             />
-          ))}
-
-        {error && (
-          <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-            {error}
-          </p>
-        )}
+          </aside>
+        </div>
       </main>
 
       {/* Barra inferior de navegação/envio */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
           {paged ? (
             <>
               <button
@@ -626,6 +697,103 @@ function Select({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function GabaritoPanel({
+  questions,
+  answers,
+  paged,
+  currentPage,
+  onMark,
+  onNavigate,
+}: {
+  questions: StudentQuestion[];
+  answers: AnswerMap;
+  paged: boolean;
+  currentPage: number;
+  onMark: (q: StudentQuestion, index: number) => void;
+  onNavigate: (index: number) => void;
+}) {
+  const answered = questions.filter((q) => {
+    const a = answers[q.id];
+    return q.type === "essay" ? Boolean(a?.essayText?.trim()) : a?.selectedIndex !== null && a?.selectedIndex !== undefined;
+  }).length;
+
+  return (
+    <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2 border-b border-slate-100 pb-3">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+          <CheckCircle2 className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-slate-900">Gabarito</h2>
+          <p className="text-[11px] text-slate-400">
+            {answered} de {questions.length} respondidas
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        {questions.map((q, qi) => {
+          const answer = answers[q.id];
+          const selected = answer?.selectedIndex ?? null;
+          const active = paged && currentPage === qi;
+          return (
+            <div
+              key={q.id}
+              className={cn(
+                "rounded-xl border p-2.5 transition",
+                active ? "border-indigo-400 bg-indigo-50/70" : "border-slate-200"
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => onNavigate(qi)}
+                  className="text-xs font-bold text-slate-700 transition hover:text-indigo-600"
+                >
+                  Questão {qi + 1}
+                </button>
+                {q.type === "essay" ? (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                    Dissertativa
+                  </span>
+                ) : selected !== null ? (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">
+                    {LETTERS[selected]}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+                    Em branco
+                  </span>
+                )}
+              </div>
+              {q.type === "multiple" && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {q.options.map((_, oi) => (
+                    <button
+                      key={oi}
+                      type="button"
+                      onClick={() => onMark(q, oi)}
+                      title={`Marcar alternativa ${LETTERS[oi]}`}
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold transition",
+                        selected === oi
+                          ? "bg-indigo-600 text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700"
+                      )}
+                    >
+                      {LETTERS[oi]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   Bold,
   ChevronDown,
   ChevronUp,
+  FileText,
   Italic,
   List,
   ListOrdered,
@@ -32,6 +33,7 @@ export type ExamDraft = {
   deadline: string; // datetime-local
   targetClasses: string;
   displayMode: "list" | "paged";
+  pdfName: string | null;
   questions: QuestionDraft[];
 };
 
@@ -65,11 +67,14 @@ export default function ExamForm({
       deadline: DEFAULT_DEADLINE(),
       targetClasses: "",
       displayMode: "list",
+      pdfName: null,
       questions: [EMPTY_QUESTION()],
     }
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"save" | "publish" | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [removePdf, setRemovePdf] = useState(false);
 
   const update = (patch: Partial<ExamDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const updateQuestion = (key: string, patch: Partial<QuestionDraft>) =>
@@ -150,6 +155,10 @@ export default function ExamForm({
     if (requireDeadline && draft.deadline && new Date(draft.deadline).getTime() < Date.now()) {
       return "A data limite precisa estar no futuro para publicar a prova.";
     }
+    if (pdfFile) {
+      if (!pdfFile.name.toLowerCase().endsWith(".pdf")) return "O arquivo da prova deve ser um PDF.";
+      if (pdfFile.size > 4_000_000) return "O arquivo PDF deve ter no máximo 4 MB.";
+    }
     return "";
   }
 
@@ -162,24 +171,29 @@ export default function ExamForm({
     }
     setBusy(publish ? "publish" : "save");
     try {
-      const body = {
-        title: draft.title,
-        description: draft.description,
-        deadline: draft.deadline || null,
-        targetClasses: draft.targetClasses,
-        displayMode: draft.displayMode,
-        publish,
-        questions: draft.questions.map((q) => ({
+      const questionsJson = JSON.stringify(
+        draft.questions.map((q) => ({
           prompt: q.prompt,
           type: q.type,
           options: q.options,
           correctIndex: q.type === "multiple" ? q.correctIndex : null,
-        })),
-      };
+        }))
+      );
+
+      const fd = new FormData();
+      fd.append("title", draft.title);
+      fd.append("description", draft.description);
+      fd.append("deadline", draft.deadline || "");
+      fd.append("targetClasses", draft.targetClasses);
+      fd.append("displayMode", draft.displayMode);
+      fd.append("publish", publish ? "1" : "0");
+      fd.append("questions", questionsJson);
+      if (pdfFile) fd.append("pdf", pdfFile);
+      if (removePdf) fd.append("removePdf", "1");
+
       const res = await fetch(examId ? `/api/exams/${examId}` : "/api/exams", {
         method: examId ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: fd,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -273,6 +287,58 @@ export default function ExamForm({
                 desc="O aluno navega questão a questão, com indicador de progresso."
               />
             </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Arquivo da prova (PDF) — opcional
+            </label>
+            {pdfFile || (draft.pdfName && !removePdf) ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <FileText className="h-5 w-5 shrink-0 text-indigo-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-800">
+                    {pdfFile ? pdfFile.name : draft.pdfName}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {pdfFile
+                      ? `Novo arquivo (${(pdfFile.size / 1024 / 1024).toFixed(2)} MB) — será enviado ao salvar`
+                      : "O aluno poderá visualizar este arquivo ao fazer a prova."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPdfFile(null);
+                    setRemovePdf(true);
+                  }}
+                  className="text-xs font-semibold text-rose-600 transition hover:underline"
+                >
+                  Remover
+                </button>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/50 px-4 py-6 text-center transition hover:border-indigo-300 hover:bg-indigo-50/40">
+                <FileText className="h-6 w-6 text-slate-400" />
+                <span className="text-sm font-semibold text-slate-600">Enviar PDF da prova</span>
+                <span className="text-xs text-slate-400">O aluno visualiza o arquivo ao fazer a prova (até 4 MB)</span>
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    setPdfFile(f);
+                    if (f) setRemovePdf(false);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+            {pdfFile && draft.pdfName && !removePdf && (
+              <p className="mt-1 text-xs text-amber-600">
+                Ao salvar, o arquivo atual ({draft.pdfName}) será substituído pelo novo.
+              </p>
+            )}
           </div>
         </div>
       </section>

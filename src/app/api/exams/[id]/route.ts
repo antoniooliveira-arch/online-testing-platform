@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { exams, questions, submissions } from "@/db/schema";
 import { getSessionUser } from "@/lib/auth";
-import { parseExamPayload, validateDeadlineForPublish } from "@/lib/exam-validation";
+import { parseExamPayload, parseExamRequest, validateDeadlineForPublish } from "@/lib/exam-validation";
 import { generateSlug } from "@/lib/utils";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -41,8 +41,18 @@ export async function GET(_req: Request, { params }: Ctx) {
   return NextResponse.json({
     ok: true,
     exam: {
-      ...exam,
+      id: exam.id,
+      title: exam.title,
+      description: exam.description,
+      teacherId: exam.teacherId,
+      status: exam.status,
       deadline: exam.deadline ? exam.deadline.toISOString() : null,
+      targetClasses: exam.targetClasses,
+      displayMode: exam.displayMode,
+      slug: exam.slug,
+      pdfName: exam.pdfName,
+      pdfSize: exam.pdfSize,
+      publishedAt: exam.publishedAt ? exam.publishedAt.toISOString() : null,
       submissionCount: Number(total),
     },
     questions: qs.map((q) => ({
@@ -61,6 +71,70 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const exam = await loadOwnedExam(id);
   if (!exam) return NextResponse.json({ error: "Prova não encontrada." }, { status: 404 });
   if (!canAccess(user, exam)) return NextResponse.json({ error: "Não autorizado." }, { status: 403 });
+
+  const contentType = req.headers.get("content-type") ?? "";
+  const isMultipart = contentType.includes("multipart/form-data");
+
+  // Edição de conteúdo com upload de PDF (multipart) — apenas em rascunho
+  if (isMultipart) {
+    if (exam.status !== "draft") {
+      return NextResponse.json(
+        { error: "Provas publicadas não podem ser editadas. Crie uma nova prova ou encerre esta." },
+        { status: 400 }
+      );
+    }
+
+    const result = await parseExamRequest(req);
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+    const { value, publish, pdf, removePdf } = result.parsed;
+
+    if (publish) {
+      const deadlineError = validateDeadlineForPublish(value.deadline);
+      if (deadlineError) return NextResponse.json({ error: deadlineError }, { status: 400 });
+    }
+
+    await db.transaction(async (tx) => {
+      const pdfFields: Record<string, unknown> = {};
+      if (pdf) {
+        pdfFields.pdfName = pdf.name;
+        pdfFields.pdfData = pdf.data;
+        pdfFields.pdfSize = pdf.size;
+      } else if (removePdf) {
+        pdfFields.pdfName = null;
+        pdfFields.pdfData = null;
+        pdfFields.pdfSize = null;
+      }
+
+      await tx
+        .update(exams)
+        .set({
+          title: value.title,
+          description: value.description,
+          deadline: value.deadline,
+          targetClasses: value.targetClasses,
+          displayMode: value.displayMode,
+          ...pdfFields,
+          ...(publish && exam.status === "draft"
+            ? { status: "active", slug: exam.slug ?? generateSlug(), publishedAt: exam.publishedAt ?? new Date() }
+            : {}),
+        })
+        .where(eq(exams.id, id));
+
+      await tx.delete(questions).where(eq(questions.examId, id));
+      await tx.insert(questions).values(
+        value.questions.map((q, i) => ({
+          examId: id,
+          prompt: q.prompt,
+          type: q.type,
+          order: i,
+          options: q.options,
+          correctIndex: q.correctIndex,
+        }))
+      );
+    });
+
+    return NextResponse.json({ ok: true });
+  }
 
   const body = (await req.json().catch(() => null)) ?? {};
   const targetStatus = typeof body.status === "string" ? body.status : null;
@@ -111,6 +185,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
   }
   const { value } = parsed;
 
+  const pdfFields: Record<string, unknown> = {};
+  if (body.removePdf === true) {
+    pdfFields.pdfName = null;
+    pdfFields.pdfData = null;
+    pdfFields.pdfSize = null;
+  }
+
   await db.transaction(async (tx) => {
     await tx
       .update(exams)
@@ -120,6 +201,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         deadline: value.deadline,
         targetClasses: value.targetClasses,
         displayMode: value.displayMode,
+        ...pdfFields,
       })
       .where(eq(exams.id, id));
 

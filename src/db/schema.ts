@@ -105,6 +105,9 @@ export const exams = pgTable(
     targetClasses: text("target_classes").notNull().default(""),
     displayMode: text("display_mode").notNull().default("list"), // "list" | "paged"
     slug: text("slug").unique(), // código/link de acesso gerado ao publicar
+    pdfName: text("pdf_name"), // arquivo da prova em PDF (nome original)
+    pdfData: text("pdf_data"), // conteúdo do PDF em base64
+    pdfSize: integer("pdf_size"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },

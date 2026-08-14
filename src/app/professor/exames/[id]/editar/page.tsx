@@ -29,6 +29,7 @@ export default async function EditExamPage({ params }: { params: Promise<{ id: s
     deadline: toLocalInput(exam.deadline),
     targetClasses: exam.targetClasses,
     displayMode: exam.displayMode === "paged" ? "paged" : "list",
+    pdfName: exam.pdfName,
     questions: qs.map(
       (q): QuestionDraft => ({
         key: `q-${q.id}`,
