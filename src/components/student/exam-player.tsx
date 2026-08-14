@@ -15,7 +15,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { renderPrompt } from "@/lib/markdown";
-import { cn, formatDateTime, LETTERS, normalize } from "@/lib/utils";
+import { cn, formatDateTime, LETTERS } from "@/lib/utils";
 
 type StudentQuestion = {
   id: number;
@@ -195,14 +195,9 @@ export default function ExamPlayer({ code }: { code: string }) {
       setError("Selecione a sua turma.");
       return;
     }
-    const name = identify.studentName.trim();
-    if (name.length < 3) {
-      setError("Preencha seu nome completo.");
-      return;
-    }
-    const aluno = findAluno(turmaAlunos, name);
+    const aluno = turmaAlunos.find((a) => a.id === identify.alunoId);
     if (!aluno) {
-      setError("Seu nome não foi encontrado na turma selecionada. Escolha o nome completo na lista de sugestões.");
+      setError("Selecione o seu nome na lista da turma.");
       return;
     }
     setIdentify((prev) => ({
@@ -351,7 +346,7 @@ export default function ExamPlayer({ code }: { code: string }) {
                 label="Escola"
                 value={identify.escolaId}
                 onChange={(v) =>
-                  setIdentify((p) => ({ ...p, escolaId: v, turmaId: "", alunoId: "", studentClass: "", school: "" }))
+                  setIdentify((p) => ({ ...p, escolaId: v, turmaId: "", alunoId: "", studentName: "", studentClass: "", school: "" }))
                 }
                 placeholder="Selecione a escola"
                 options={schoolData.map((e) => ({ value: e.id, label: e.nome }))}
@@ -360,7 +355,7 @@ export default function ExamPlayer({ code }: { code: string }) {
                 label="Turma"
                 value={identify.turmaId}
                 onChange={(v) =>
-                  setIdentify((p) => ({ ...p, turmaId: v, alunoId: "", studentClass: "", school: "" }))
+                  setIdentify((p) => ({ ...p, turmaId: v, alunoId: "", studentName: "", studentClass: "", school: "" }))
                 }
                 placeholder={selectedEscola ? "Selecione a turma" : "Escolha a escola primeiro"}
                 disabled={!selectedEscola}
@@ -368,20 +363,19 @@ export default function ExamPlayer({ code }: { code: string }) {
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Nome completo</label>
-              <input
-                list="alunos-datalist"
-                value={identify.studentName}
-                onChange={(e) => setIdentify((p) => ({ ...p, studentName: e.target.value }))}
-                placeholder={turmaAlunos.length > 0 ? "Digite ou escolha seu nome na lista" : "Selecione a turma para ver os alunos"}
-                required
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              <Select
+                label="Nome do aluno"
+                value={identify.alunoId}
+                onChange={(v) => setIdentify((p) => ({ ...p, alunoId: v, studentName: "" }))}
+                placeholder={
+                  turmaAlunos.length > 0 ? "Selecione o seu nome" : "Selecione a turma para ver os alunos"
+                }
+                disabled={!selectedTurma}
+                options={turmaAlunos.map((a) => ({
+                  value: a.id,
+                  label: `${String(a.numeroChamada ?? 0).padStart(3, "0")} — ${a.nome}`,
+                }))}
               />
-              <datalist id="alunos-datalist">
-                {turmaAlunos.map((a) => (
-                  <option key={a.id} value={a.nome} />
-                ))}
-              </datalist>
               {selectedTurma && turmaAlunos.length > 0 && (
                 <p className="mt-1.5 text-xs text-slate-400">
                   {selectedTurma.nome} · {selectedTurma.turno}
@@ -634,19 +628,6 @@ function Select({
       </select>
     </div>
   );
-}
-
-/** Encontra o aluno da turma pelo nome digitado (ignora acentos/caixa). */
-function findAluno(list: { id: string; nome: string }[], typed: string): { id: string; nome: string } | null {
-  const norm = normalize(typed);
-  if (!norm) return null;
-  const exact = list.filter((a) => normalize(a.nome) === norm);
-  if (exact.length === 1) return exact[0];
-  if (norm.length >= 5) {
-    const candidates = list.filter((a) => normalize(a.nome).includes(norm));
-    if (candidates.length === 1) return candidates[0];
-  }
-  return null;
 }
 
 function QuestionCard({
