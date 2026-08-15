@@ -14,7 +14,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Informe seu nome e sua senha." }, { status: 400 });
   }
 
-  const [aluno] = await db.select().from(alunos).where(eq(alunos.id, alunoId)).limit(1);
+  let aluno: typeof alunos.$inferSelect | undefined;
+  try {
+    [aluno] = await db.select().from(alunos).where(eq(alunos.id, alunoId)).limit(1);
+  } catch {
+    aluno = undefined;
+  }
   if (!aluno) {
     return NextResponse.json({ ok: false, error: "Aluno não encontrado." }, { status: 401 });
   }
