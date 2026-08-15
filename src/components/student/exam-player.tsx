@@ -194,6 +194,14 @@ export default function ExamPlayer({ code }: { code: string }) {
     );
   }, [selectedEscola]);
 
+  // Alunos exibidos no campo "Nome": somente os da turma selecionada (todos da escola sem turma).
+  const turmaAlunos = useMemo(() => {
+    if (!selectedTurma) return escolaAlunos;
+    return selectedTurma.alunos
+      .map((a) => ({ ...a, turmaId: selectedTurma.id, turmaNome: selectedTurma.nome }))
+      .sort((x, y) => (x.numeroChamada ?? 0) - (y.numeroChamada ?? 0));
+  }, [selectedTurma, escolaAlunos]);
+
   // Restaura o rascunho salvo automaticamente
   useEffect(() => {
     if (stage !== "identify" && stage !== "exam") return;
@@ -497,7 +505,7 @@ export default function ExamPlayer({ code }: { code: string }) {
                 label="Nome do aluno"
                 value={identify.alunoId}
                 onChange={(v) => {
-                  const al = escolaAlunos.find((a) => a.id === v);
+                  const al = turmaAlunos.find((a) => a.id === v);
                   setIdentify((p) => ({
                     ...p,
                     alunoId: v,
@@ -507,20 +515,21 @@ export default function ExamPlayer({ code }: { code: string }) {
                   }));
                 }}
                 placeholder={
-                  escolaAlunos.length > 0
-                    ? "Selecione o seu nome"
-                    : "Escolha a escola para ver os alunos"
+                  selectedTurma
+                    ? turmaAlunos.length > 0
+                      ? "Selecione o seu nome"
+                      : "Nenhum aluno nesta turma"
+                    : "Selecione a turma primeiro"
                 }
-                disabled={!selectedEscola}
-                options={escolaAlunos.map((a) => ({
+                disabled={!selectedTurma}
+                options={turmaAlunos.map((a) => ({
                   value: a.id,
                   label: `${String(a.numeroChamada ?? 0).padStart(3, "0")} — ${a.nome} · ${a.turmaNome}`,
                 }))}
               />
-              {selectedEscola && escolaAlunos.length > 0 && (
+              {selectedTurma && turmaAlunos.length > 0 && (
                 <p className="mt-1.5 text-xs text-slate-400">
-                  {escolaAlunos.length} alunos · todos os nomes da escola, com a turma indicada
-                  {selectedTurma ? ` (filtro: ${selectedTurma.nome})` : ""}
+                  {turmaAlunos.length} alunos da turma {selectedTurma.nome}
                 </p>
               )}
             </div>
