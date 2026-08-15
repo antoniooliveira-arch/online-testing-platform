@@ -56,10 +56,6 @@ export default function HomePage() {
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
             Crie, aplique e avalie provas sem complicação
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-indigo-100">
-            Professores montam avaliações em minutos, alunos respondem sem cadastro usando um
-            código ou QR Code, e gestores acompanham tudo com gráficos e relatórios.
-          </p>
           <div id="acessar" className="mt-10 scroll-mt-24">
             <AccessForm />
           </div>
