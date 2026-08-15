@@ -4,7 +4,7 @@ import AccessForm from "@/components/access-form";
 
 export default function AlunoCodigoPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-600">
+    <div className="flex min-h-screen flex-col bg-gradient-to-br from-indigo-900 via-indigo-700 to-violet-900">
       <header className="mx-auto w-full max-w-5xl px-4 py-6">
         <Link href="/aluno" className="inline-flex items-center gap-2 text-white">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">

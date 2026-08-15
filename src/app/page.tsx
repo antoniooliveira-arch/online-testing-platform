@@ -46,7 +46,7 @@ export default function HomePage() {
       </header>
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-600 text-white">
+      <section className="bg-gradient-to-br from-indigo-900 via-indigo-700 to-violet-900 text-white">
         <div className="mx-auto max-w-6xl px-4 pb-20 pt-16 text-center sm:pt-24">
           <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 text-sm font-medium">
             <QrCode className="h-4 w-4" />

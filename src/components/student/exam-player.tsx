@@ -670,7 +670,7 @@ export default function ExamPlayer({ code }: { code: string }) {
 
   if (reviewing) {
     return (
-      <div className="min-h-screen bg-slate-100">
+      <div className="min-h-screen bg-gradient-to-b from-indigo-50/70 via-slate-50 to-slate-100">
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
             <div className="flex items-center gap-2.5">
@@ -784,7 +784,7 @@ export default function ExamPlayer({ code }: { code: string }) {
   // ------------------------- PROVA -------------------------
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-gradient-to-b from-indigo-50/70 via-slate-50 to-slate-100">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto max-w-7xl px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -969,7 +969,7 @@ export default function ExamPlayer({ code }: { code: string }) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-700 via-indigo-600 to-violet-600 px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-900 via-indigo-700 to-violet-900 px-4 py-10">
       <div className="w-full max-w-lg">{children}</div>
     </div>
   );
