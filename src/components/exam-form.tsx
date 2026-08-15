@@ -327,12 +327,15 @@ export default function ExamForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Disciplina</label>
-              <input
+              <select
                 value={draft.disciplina}
                 onChange={(e) => update({ disciplina: e.target.value })}
-                placeholder="Ex.: Matemática"
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-              />
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              >
+                <option value="">Selecione a disciplina...</option>
+                <option value="LÍNGUA PORTUGUESA">LÍNGUA PORTUGUESA</option>
+                <option value="MATEMÁTICA">MATEMÁTICA</option>
+              </select>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">Escola</label>
