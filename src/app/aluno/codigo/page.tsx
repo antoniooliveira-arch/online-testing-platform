@@ -1,18 +1,14 @@
 import Link from "next/link";
-import { ArrowLeft, GraduationCap, KeyRound } from "lucide-react";
+import { ArrowLeft, KeyRound } from "lucide-react";
 import AccessForm from "@/components/access-form";
+import Logo from "@/components/logo";
 
 export default function AlunoCodigoPage() {
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-indigo-900 via-indigo-700 to-violet-900">
       <header className="mx-auto w-full max-w-5xl px-4 py-6">
-        <Link href="/aluno" className="inline-flex items-center gap-2 text-white">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">
-            <GraduationCap className="h-5 w-5" />
-          </span>
-          <span className="text-lg font-bold tracking-tight">
-            Avalia<span className="text-indigo-200">Lab</span>
-          </span>
+        <Link href="/aluno" className="inline-flex items-center">
+          <Logo className="h-16 w-auto" />
         </Link>
       </header>
 

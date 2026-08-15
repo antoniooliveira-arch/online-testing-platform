@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BarChart3, LogOut } from "lucide-react";
+import Logo from "@/components/logo";
 
 export default function Shell({
   user,
@@ -25,12 +26,7 @@ export default function Shell({
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
           <Link href={home} className="flex items-center">
-            <img
-              src="/logo-sme.png"
-              alt="AvaliaLab"
-              className="h-12 w-auto"
-              style={{ objectFit: "contain" }}
-            />
+            <Logo className="h-14 w-auto" />
           </Link>
 
           <div className="flex items-center gap-3">

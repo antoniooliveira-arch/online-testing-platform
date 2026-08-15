@@ -6,12 +6,12 @@ import {
   ClipboardList,
   Clock,
   FileText,
-  GraduationCap,
   Inbox,
   Lock,
   PlayCircle,
   Timer,
 } from "lucide-react";
+import Logo from "@/components/logo";
 import { db } from "@/db";
 import { provas, resultados } from "@/db/schema";
 import { requireAluno } from "@/lib/auth";
@@ -61,10 +61,8 @@ export default async function PainelPage() {
     <div className="min-h-screen bg-gradient-to-b from-indigo-50/70 via-slate-50 to-slate-100">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white">
-              <GraduationCap className="h-6 w-6" />
-            </span>
+          <div className="flex items-center gap-3">
+            <Logo className="h-14 w-auto" />
             <div>
               <h1 className="text-lg font-extrabold tracking-tight text-slate-900">Minhas provas</h1>
               <p className="text-xs text-slate-500">

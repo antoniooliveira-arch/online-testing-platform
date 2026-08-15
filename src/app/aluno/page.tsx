@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, GraduationCap, UserRound } from "lucide-react";
+import { ArrowLeft, UserRound } from "lucide-react";
 import AlunoAccessCard from "@/components/student/aluno-access-card";
+import Logo from "@/components/logo";
 import { getSessionAluno } from "@/lib/auth";
 
 export default async function AlunoPage() {
@@ -11,13 +12,8 @@ export default async function AlunoPage() {
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-indigo-900 via-indigo-700 to-violet-900">
       <header className="mx-auto w-full max-w-5xl px-4 py-6">
-        <Link href="/" className="inline-flex items-center gap-2 text-white">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">
-            <GraduationCap className="h-5 w-5" />
-          </span>
-          <span className="text-lg font-bold tracking-tight">
-            Avalia<span className="text-indigo-200">Lab</span>
-          </span>
+        <Link href="/" className="inline-flex items-center">
+          <Logo className="h-16 w-auto" />
         </Link>
       </header>
 

@@ -10,7 +10,6 @@ import {
   ClipboardList,
   FileText,
   Flag,
-  GraduationCap,
   KeyRound,
   Loader2,
   Lock,
@@ -22,6 +21,7 @@ import {
 import { renderPrompt } from "@/lib/markdown";
 import { cn, formatDateTime } from "@/lib/utils";
 import PdfViewer from "@/components/student/pdf-viewer";
+import Logo from "@/components/logo";
 
 type StudentAlternativa = { id: number; letra: string; texto: string };
 
@@ -674,9 +674,7 @@ export default function ExamPlayer({ code }: { code: string }) {
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
-                <CheckCircle2 className="h-5 w-5" />
-              </span>
+              <Logo className="h-12 w-auto shrink-0" />
               <div>
                 <h1 className="text-sm font-bold text-slate-900">Revisar respostas</h1>
                 <p className="text-xs text-slate-400">{exam?.titulo}</p>
@@ -789,9 +787,7 @@ export default function ExamPlayer({ code }: { code: string }) {
         <div className="mx-auto max-w-7xl px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
-                <GraduationCap className="h-5 w-5" />
-              </span>
+              <Logo className="h-12 w-auto shrink-0" />
               <div className="min-w-0">
                 <h1 className="truncate text-sm font-bold text-slate-900 sm:text-base">{exam?.titulo}</h1>
                 <p className="truncate text-xs text-slate-400">
@@ -969,7 +965,10 @@ export default function ExamPlayer({ code }: { code: string }) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-indigo-900 via-indigo-700 to-violet-900 px-4 py-10">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-indigo-900 via-indigo-700 to-violet-900 px-4 py-10">
+      <div className="mb-8 flex justify-center">
+        <Logo className="h-24 w-auto" />
+      </div>
       <div className="w-full max-w-lg">{children}</div>
     </div>
   );

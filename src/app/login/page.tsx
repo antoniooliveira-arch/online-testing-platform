@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { GraduationCap } from "lucide-react";
 import { getSessionUser } from "@/lib/auth";
 import LoginForm from "@/components/login-form";
+import Logo from "@/components/logo";
 
 export default async function LoginPage() {
   const user = await getSessionUser();
@@ -10,11 +10,8 @@ export default async function LoginPage() {
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-indigo-900 via-indigo-700 to-violet-900">
       <header className="mx-auto w-full max-w-5xl px-4 py-6">
-        <a href="/" className="inline-flex items-center gap-2 text-white">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">
-            <GraduationCap className="h-5 w-5" />
-          </span>
-          <span className="text-lg font-bold tracking-tight">AvaliaLab</span>
+        <a href="/" className="inline-flex items-center">
+          <Logo className="h-16 w-auto" />
         </a>
       </header>
       <main className="flex flex-1 items-center justify-center px-4 pb-16">

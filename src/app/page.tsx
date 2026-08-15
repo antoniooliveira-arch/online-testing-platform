@@ -10,6 +10,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
+import Logo from "@/components/logo";
 
 export default function HomePage() {
   return (
@@ -17,13 +18,8 @@ export default function HomePage() {
       {/* Topo */}
       <header className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white">
-              <GraduationCap className="h-5 w-5" />
-            </span>
-            <span className="text-lg font-bold tracking-tight text-slate-900">
-              Avalia<span className="text-indigo-600">Lab</span>
-            </span>
+          <Link href="/" className="flex items-center">
+            <Logo className="h-14 w-auto" />
           </Link>
           <nav className="hidden items-center gap-6 text-sm font-medium text-slate-600 sm:flex">
             <a href="#como-funciona" className="transition hover:text-indigo-600">
