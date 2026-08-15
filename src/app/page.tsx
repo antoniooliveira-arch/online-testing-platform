@@ -2,7 +2,6 @@ import Link from "next/link";
 import {
   BarChart3,
   ClipboardList,
-  GraduationCap,
   LayoutDashboard,
   PencilLine,
   QrCode,
@@ -145,21 +144,10 @@ export default function HomePage() {
 
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-8">
-          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white">
-                <GraduationCap className="h-5 w-5" />
-              </span>
-              <div>
-                <p className="text-base font-bold tracking-tight text-slate-900">AvaliaLab</p>
-                <p className="text-sm text-slate-500">Plataforma de provas online com correção automática</p>
-              </div>
-            </div>
-            <p className="flex items-center gap-2 text-sm font-medium text-slate-600">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              Dados dos alunos tratados com segurança e privacidade.
-            </p>
-          </div>
+          <p className="flex items-center justify-center gap-2 text-sm font-medium text-slate-600">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            Dados dos alunos tratados com segurança e privacidade.
+          </p>
           <div className="mt-6 flex flex-col items-center justify-between gap-2 border-t border-slate-100 pt-4 sm:flex-row">
             <p className="text-sm text-slate-500">© {new Date().getFullYear()} AvaliaLab — Secretaria Municipal de Educação.</p>
             <p className="text-sm font-semibold text-slate-700">Desenvolvido pelo Departamento de Tecnologia/SME.</p>
