@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
+  Building2,
   ClipboardList,
   FilePlus2,
   GraduationCap,
@@ -21,6 +22,7 @@ const NAV: NavItem[] = [
   { href: "/admin/dashboard", label: "Turma/Escola", icon: School },
   { href: "/professor", label: "Provas", icon: ClipboardList },
   { href: "/professor/nova", label: "Nova prova", icon: FilePlus2 },
+  { href: "/professor/cadastro", label: "Cadastro", icon: Building2 },
   { href: "/admin/respostas", label: "Respostas", icon: ListChecks },
 ];
 

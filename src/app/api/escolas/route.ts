@@ -1,11 +1,67 @@
-import { asc, eq, and } from "drizzle-orm";
+import { asc, eq, and, max } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { alunos, escolas, matriculas, turmas } from "@/db/schema";
+import { getSessionUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 const ANO_LETIVO = 2026;
+
+type TurmaInput = { nome: string; ano: string; turno: string; professor?: string | null };
+
+/** Cadastra uma escola com suas turmas (acesso de professor ou administrador). */
+export async function POST(req: Request) {
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+
+  const body = (await req.json().catch(() => null)) ?? {};
+  const nome = typeof body.nome === "string" ? body.nome.trim() : "";
+  const turmasInput = Array.isArray(body.turmas) ? (body.turmas as TurmaInput[]) : [];
+
+  if (nome.length < 3) {
+    return NextResponse.json({ error: "Informe o nome da escola (mínimo 3 letras)." }, { status: 400 });
+  }
+  if (turmasInput.length > 0) {
+    for (const t of turmasInput) {
+      if (!t || typeof t.nome !== "string" || t.nome.trim().length < 2) {
+        return NextResponse.json({ error: "Informe o nome de cada turma." }, { status: 400 });
+      }
+      if (typeof t.ano !== "string" || !t.ano.trim()) {
+        return NextResponse.json({ error: "Informe o ano/série de cada turma." }, { status: 400 });
+      }
+      if (typeof t.turno !== "string" || !t.turno.trim()) {
+        return NextResponse.json({ error: "Informe o turno de cada turma." }, { status: 400 });
+      }
+    }
+  }
+
+  const [maxEscola] = await db.select({ m: max(escolas.codigo) }).from(escolas);
+  const [maxTurma] = await db.select({ m: max(turmas.codigo) }).from(turmas);
+  const escolaCodigo = (maxEscola?.m ?? 0) + 1;
+  let turmaCodigo = (maxTurma?.m ?? 0) + 1;
+
+  const { id: escolaId } = await db.transaction(async (tx) => {
+    const [escola] = await tx
+      .insert(escolas)
+      .values({ nome, codigo: escolaCodigo })
+      .returning({ id: escolas.id });
+    for (const t of turmasInput) {
+      await tx.insert(turmas).values({
+        escolaId: escola.id,
+        codigo: turmaCodigo++,
+        nome: t.nome.trim(),
+        ano: t.ano.trim(),
+        turno: t.turno.trim(),
+        professor: typeof t.professor === "string" && t.professor.trim() ? t.professor.trim() : null,
+        anoLetivo: ANO_LETIVO,
+      });
+    }
+    return escola;
+  });
+
+  return NextResponse.json({ ok: true, id: escolaId, nome, turmas: turmasInput.length });
+}
 
 /**
  * Endpoint público usado na identificação do aluno (tela da prova).
