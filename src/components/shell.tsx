@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  School,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ type NavItem = { href: string; label: string; icon: React.ComponentType<{ classN
 
 const NAV: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/dashboard", label: "Turma/Escola", icon: School },
   { href: "/professor", label: "Provas", icon: ClipboardList },
   { href: "/professor/nova", label: "Nova prova", icon: FilePlus2 },
   { href: "/admin/respostas", label: "Respostas", icon: ListChecks },
