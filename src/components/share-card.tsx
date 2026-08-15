@@ -13,7 +13,7 @@ export default function ShareCard({ slug, examTitle }: { slug: string; examTitle
     setOrigin(window.location.origin);
   }, []);
 
-  const url = origin ? `${origin}/prova/${slug}` : "";
+  const url = origin ? `${origin}/p/${slug}` : "";
 
   async function copy() {
     try {
