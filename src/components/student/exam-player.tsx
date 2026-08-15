@@ -168,7 +168,21 @@ export default function ExamPlayer({ code }: { code: string }) {
 
   const selectedEscola = schoolData.find((e) => e.id === identify.escolaId);
   const selectedTurma = selectedEscola?.turmas.find((t) => t.id === identify.turmaId);
-  const turmaAlunos = selectedTurma?.alunos ?? [];
+
+  // Todos os alunos da escola selecionada (deduplicados), com a turma de cada um.
+  const escolaAlunos = useMemo(() => {
+    if (!selectedEscola) return [] as { id: string; nome: string; numeroChamada: number | null; turmaId: string; turmaNome: string }[];
+    const seen = new Map<string, { id: string; nome: string; numeroChamada: number | null; turmaId: string; turmaNome: string }>();
+    for (const t of selectedEscola.turmas) {
+      for (const a of t.alunos) {
+        if (!seen.has(a.id)) seen.set(a.id, { ...a, turmaId: t.id, turmaNome: t.nome });
+      }
+    }
+    return Array.from(seen.values()).sort(
+      (x, y) =>
+        x.turmaNome.localeCompare(y.turmaNome) || (x.numeroChamada ?? 0) - (y.numeroChamada ?? 0)
+    );
+  }, [selectedEscola]);
 
   // Restaura o rascunho salvo automaticamente
   useEffect(() => {
@@ -234,16 +248,17 @@ export default function ExamPlayer({ code }: { code: string }) {
       setError("Selecione a sua turma.");
       return;
     }
-    const aluno = turmaAlunos.find((a) => a.id === identify.alunoId);
+    const aluno = escolaAlunos.find((a) => a.id === identify.alunoId);
     if (!aluno) {
-      setError("Selecione o seu nome na lista da turma.");
+      setError("Selecione o seu nome na lista de alunos da escola.");
       return;
     }
     setIdentify((prev) => ({
       ...prev,
       studentName: aluno.nome,
-      studentClass: selectedTurma!.nome,
+      studentClass: aluno.turmaNome,
       school: selectedEscola!.nome,
+      turmaId: aluno.turmaId,
       alunoId: aluno.id,
     }));
     setStage("exam");
@@ -412,21 +427,31 @@ export default function ExamPlayer({ code }: { code: string }) {
               <Select
                 label="Nome do aluno"
                 value={identify.alunoId}
-                onChange={(v) => setIdentify((p) => ({ ...p, alunoId: v, studentName: "" }))}
+                onChange={(v) => {
+                  const al = escolaAlunos.find((a) => a.id === v);
+                  setIdentify((p) => ({
+                    ...p,
+                    alunoId: v,
+                    studentName: al?.nome ?? "",
+                    turmaId: al?.turmaId ?? p.turmaId,
+                    studentClass: al?.turmaNome ?? "",
+                  }));
+                }}
                 placeholder={
-                  turmaAlunos.length > 0 ? "Selecione o seu nome" : "Selecione a turma para ver os alunos"
+                  escolaAlunos.length > 0
+                    ? "Selecione o seu nome"
+                    : "Escolha a escola para ver os alunos"
                 }
-                disabled={!selectedTurma}
-                options={turmaAlunos.map((a) => ({
+                disabled={!selectedEscola}
+                options={escolaAlunos.map((a) => ({
                   value: a.id,
-                  label: `${String(a.numeroChamada ?? 0).padStart(3, "0")} — ${a.nome}`,
+                  label: `${String(a.numeroChamada ?? 0).padStart(3, "0")} — ${a.nome} · ${a.turmaNome}`,
                 }))}
               />
-              {selectedTurma && turmaAlunos.length > 0 && (
+              {selectedEscola && escolaAlunos.length > 0 && (
                 <p className="mt-1.5 text-xs text-slate-400">
-                  {selectedTurma.nome} · {selectedTurma.turno}
-                  {selectedTurma.professor ? ` · Prof. ${selectedTurma.professor}` : ""} ·{" "}
-                  {turmaAlunos.length} {turmaAlunos.length === 1 ? "aluno" : "alunos"}
+                  {escolaAlunos.length} alunos · todos os nomes da escola, com a turma indicada
+                  {selectedTurma ? ` (filtro: ${selectedTurma.nome})` : ""}
                 </p>
               )}
             </div>
