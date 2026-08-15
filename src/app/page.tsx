@@ -10,7 +10,6 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import AccessForm from "@/components/access-form";
 
 export default function HomePage() {
   return (
@@ -56,9 +55,6 @@ export default function HomePage() {
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl">
             Crie, aplique e avalie provas sem complicação
           </h1>
-          <div id="acessar" className="mt-10 scroll-mt-24">
-            <AccessForm />
-          </div>
         </div>
       </section>
 
