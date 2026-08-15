@@ -1,4 +1,4 @@
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { alternativas, provas, questoes, resultados } from "@/db/schema";
@@ -39,7 +39,7 @@ export async function GET(_req: Request, { params }: Ctx) {
       ? await db
           .select()
           .from(alternativas)
-          .where(and(...qIds.map((qid) => eq(alternativas.questaoId, qid))))
+          .where(inArray(alternativas.questaoId, qIds))
       : [];
 
   const altByQuestao = new Map<number, (typeof allAlts)[number][]>();
