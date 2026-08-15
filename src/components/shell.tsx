@@ -57,7 +57,7 @@ export default function Shell({
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-2 px-4 py-5 sm:flex-row">
           <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
             <BarChart3 className="h-4 w-4 text-indigo-600" />
-            AvaliaLab — plataforma de provas online
+            SabeTudo — plataforma de provas online
           </p>
           <p className="text-sm font-medium text-slate-600">
             Desenvolvido pelo Departamento de Tecnologia/SME.

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AvaliaLab — Plataforma de Provas Online",
+  title: "SabeTudo — Plataforma de Provas Online",
   description:
     "Plataforma simples e intuitiva para professores criarem provas online, alunos responderem sem cadastro e gestores acompanharem resultados.",
 };

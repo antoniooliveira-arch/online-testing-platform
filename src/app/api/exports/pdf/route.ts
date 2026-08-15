@@ -31,7 +31,7 @@ export async function GET(req: Request) {
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
-  doc.text("AvaliaLab — Relatório de Respostas", 14, 13);
+  doc.text("SabeTudo — Relatório de Respostas", 14, 13);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.text(`Gerado em ${formatDateTime(new Date())} por ${user.name}`, 14, 20);
@@ -179,7 +179,7 @@ export async function GET(req: Request) {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(140, 140, 140);
-    doc.text(`AvaliaLab • Página ${i} de ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: "right" });
+    doc.text(`SabeTudo • Página ${i} de ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: "right" });
   }
 
   const buffer = Buffer.from(doc.output("arraybuffer"));
