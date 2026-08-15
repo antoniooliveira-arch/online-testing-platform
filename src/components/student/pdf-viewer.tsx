@@ -12,10 +12,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Configuração do worker do pdf.js (bundlado pela própria aplicação)
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask } from "pdfjs-dist";
-
-GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+// pdf.js é carregado dinamicamente no client (evita ReferenceError de DOMMatrix no SSR)
+import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3;
@@ -45,24 +43,30 @@ export default function PdfViewer({ url, title }: { url: string; title?: string 
     setError("");
     setPdf(null);
     setPage(1);
-    fetch(url)
-      .then(async (res) => {
+    (async () => {
+      try {
+        const pdfjs = await import("pdfjs-dist");
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+          "pdfjs-dist/build/pdf.worker.min.mjs",
+          import.meta.url
+        ).toString();
+        const res = await fetch(url);
         if (!res.ok) throw new Error("Não foi possível carregar o PDF.");
         const data = await res.arrayBuffer();
         if (cancelled) return;
-        const doc = await getDocument({ data }).promise;
+        const doc = await pdfjs.getDocument({ data }).promise;
         if (cancelled) {
           (doc as unknown as { destroy?: () => void }).destroy?.();
           return;
         }
         setPdf(doc);
         setLoading(false);
-      })
-      .catch((e) => {
+      } catch (e) {
         if (cancelled) return;
-        setError(e?.message ?? "Não foi possível carregar o PDF.");
+        setError((e as Error)?.message ?? "Não foi possível carregar o PDF.");
         setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
       (pdf as unknown as { destroy?: () => void } | null)?.destroy?.();
