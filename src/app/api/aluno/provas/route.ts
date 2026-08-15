@@ -53,6 +53,7 @@ export async function GET() {
         instrucoes: p.instrucoes,
         dataInicio: p.dataInicio ? p.dataInicio.toISOString() : null,
         dataFim: p.dataFim ? p.dataFim.toISOString() : null,
+        tempoMinutos: p.tempoMinutos,
         status: p.status,
         codigo: p.codigo,
         arquivoNome: p.arquivoNome,

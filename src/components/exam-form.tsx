@@ -41,6 +41,7 @@ export type ProvaDraft = {
   instrucoes: string;
   dataInicio: string; // datetime-local
   dataFim: string; // datetime-local
+  tempoMinutos: number | null;
   pdfName: string | null;
   questoes: QuestaoDraft[];
 };
@@ -92,6 +93,7 @@ export default function ExamForm({
       instrucoes: "",
       dataInicio: "",
       dataFim: DEFAULT_DATAFIM(),
+      tempoMinutos: null,
       pdfName: null,
       questoes: [EMPTY_QUESTION()],
     }
@@ -101,6 +103,18 @@ export default function ExamForm({
   const [busy, setBusy] = useState<"save" | "publish" | null>(null);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [removePdf, setRemovePdf] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pdfFile) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(pdfFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [pdfFile]);
 
   useEffect(() => {
     fetch("/api/escolas")
@@ -251,6 +265,7 @@ export default function ExamForm({
       fd.append("instrucoes", draft.instrucoes);
       fd.append("dataInicio", draft.dataInicio || "");
       fd.append("dataFim", draft.dataFim || "");
+      if (draft.tempoMinutos) fd.append("tempoMinutos", String(draft.tempoMinutos));
       fd.append("publish", publish ? "1" : "0");
       fd.append("questoes", questoesJson);
       if (pdfFile) fd.append("pdf", pdfFile);
@@ -384,6 +399,25 @@ export default function ExamForm({
               <p className="text-xs text-slate-400">Deixe em branco para liberar imediatamente ao publicar.</p>
             </div>
           </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Tempo limite da prova (minutos)</label>
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={draft.tempoMinutos ?? ""}
+                onChange={(e) => update({ tempoMinutos: e.target.value ? Number(e.target.value) : null })}
+                placeholder="Ex.: 60 (deixe vazio para sem limite)"
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              />
+            </div>
+            <div className="self-end">
+              <p className="text-xs text-slate-400">
+                Com tempo definido, o aluno verá um cronômetro e o envio é feito automaticamente ao zerar.
+              </p>
+            </div>
+          </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Instruções para os alunos</label>
             <textarea
@@ -403,13 +437,29 @@ export default function ExamForm({
                 <FileText className="h-5 w-5 shrink-0 text-indigo-500" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-slate-800">
-                    {pdfFile ? pdfFile.name : draft.pdfName}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {pdfFile
-                      ? `Novo arquivo (${(pdfFile.size / 1024 / 1024).toFixed(2)} MB) — será enviado ao salvar`
-                      : "O aluno poderá visualizar este arquivo ao fazer a prova."}
-                  </p>
+{pdfFile ? pdfFile.name : draft.pdfName}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {pdfFile
+                        ? `Novo arquivo (${(pdfFile.size / 1024 / 1024).toFixed(2)} MB) — será enviado ao salvar`
+                        : "O aluno poderá visualizar este arquivo ao fazer a prova."}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowPreview((v) => !v)}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                      >
+                        {showPreview ? "Ocultar pré-visualização" : "Ver pré-visualização"}
+                      </button>
+                      {showPreview && (
+                        <iframe
+                          src={pdfFile ? (previewUrl ?? "") : examId ? `/api/exams/${examId}/pdf` : ""}
+                          title="Pré-visualização do PDF"
+                          className="h-[60vh] w-full rounded-xl border border-slate-200 bg-slate-50"
+                        />
+                      )}
+                    </div>
                 </div>
                 <button
                   type="button"

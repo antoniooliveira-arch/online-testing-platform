@@ -35,6 +35,7 @@ export async function GET(_req: Request, { params }: Ctx) {
     instrucoes: prova.instrucoes,
     dataInicio: prova.dataInicio ? prova.dataInicio.toISOString() : null,
     dataFim: prova.dataFim ? prova.dataFim.toISOString() : null,
+    tempoMinutos: prova.tempoMinutos,
     arquivoNome: prova.arquivoNome,
   };
 

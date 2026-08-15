@@ -25,6 +25,7 @@ create table if not exists public.provas (
     instrucoes text not null default '',
     data_inicio timestamptz,
     data_fim timestamptz,
+    tempo_minutos integer,
     status text not null default 'draft',
     codigo text unique,
     professor_id integer references public.users(id),

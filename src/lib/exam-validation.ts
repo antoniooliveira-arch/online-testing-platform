@@ -20,6 +20,7 @@ export type ProvaInput = {
   instrucoes: string;
   dataInicio: Date | null;
   dataFim: Date | null;
+  tempoMinutos: number | null;
   questoes: QuestaoInput[];
 };
 
@@ -55,6 +56,11 @@ export function parseProvaPayload(body: unknown): { ok: true; value: ProvaInput 
   };
   const dataInicio = toDate(b.dataInicio);
   const dataFim = toDate(b.dataFim);
+
+  const tempoMinutos =
+    typeof b.tempoMinutos === "number" && Number.isFinite(b.tempoMinutos) && b.tempoMinutos > 0
+      ? Math.min(Math.floor(b.tempoMinutos), 999)
+      : null;
 
   const rawQuestoes = Array.isArray(b.questoes) ? b.questoes : [];
   const parsedQuestoes: QuestaoInput[] = [];
@@ -110,7 +116,7 @@ export function parseProvaPayload(body: unknown): { ok: true; value: ProvaInput 
 
   return {
     ok: true,
-    value: { titulo, disciplina, turma, escolaId, instrucoes, dataInicio, dataFim, questoes: parsedQuestoes },
+    value: { titulo, disciplina, turma, escolaId, instrucoes, dataInicio, dataFim, tempoMinutos, questoes: parsedQuestoes },
   };
 }
 
@@ -184,6 +190,7 @@ export async function parseProvaRequest(
       instrucoes: fd.get("instrucoes"),
       dataInicio: fd.get("dataInicio"),
       dataFim: fd.get("dataFim"),
+      tempoMinutos: fd.get("tempoMinutos") ? Number(fd.get("tempoMinutos")) : null,
       questoes,
     };
     publish = fd.get("publish") === "1" || fd.get("publish") === "true";

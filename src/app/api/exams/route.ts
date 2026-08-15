@@ -33,6 +33,7 @@ export async function POST(req: Request) {
         instrucoes: value.instrucoes,
         dataInicio: value.dataInicio,
         dataFim: value.dataFim,
+        tempoMinutos: value.tempoMinutos,
         professorId: user.id,
         status: publish ? "active" : "draft",
         codigo,

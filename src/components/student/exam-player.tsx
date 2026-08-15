@@ -8,16 +8,18 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardList,
-  ExternalLink,
   FileText,
+  Flag,
   GraduationCap,
   Loader2,
   SearchX,
   Send,
+  Timer,
   UserRound,
 } from "lucide-react";
 import { renderPrompt } from "@/lib/markdown";
 import { cn, formatDateTime } from "@/lib/utils";
+import PdfViewer from "@/components/student/pdf-viewer";
 
 type StudentAlternativa = { id: number; letra: string; texto: string };
 
@@ -39,6 +41,7 @@ type ExamInfo = {
   instrucoes: string;
   dataInicio: string | null;
   dataFim: string | null;
+  tempoMinutos?: number | null;
   arquivoNome?: string | null;
 };
 
@@ -88,9 +91,16 @@ export default function ExamPlayer({ code }: { code: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [alreadyDone, setAlreadyDone] = useState(false);
   const [reviewing, setReviewing] = useState(false);
-  const [showPdf, setShowPdf] = useState(false);
+  const [flagged, setFlagged] = useState<Set<number>>(new Set());
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [timeUp, setTimeUp] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"pdf" | "gabarito">("pdf");
+  const autoSubmittedRef = useRef(false);
   const loadedRef = useRef(false);
   const storageKey = `${STORAGE_KEY_PREFIX}${code.toUpperCase()}`;
+
+  const hasPdf = Boolean(exam?.arquivoNome);
 
   // Carrega a prova
   useEffect(() => {
@@ -192,9 +202,16 @@ export default function ExamPlayer({ code }: { code: string }) {
     try {
       const raw = localStorage.getItem(storageKey);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { identify?: Identify; answers?: AnswerMap };
+      const saved = JSON.parse(raw) as {
+        identify?: Identify;
+        answers?: AnswerMap;
+        flagged?: number[];
+        startedAt?: number;
+      };
       if (saved.identify?.studentName) {
         setIdentify(saved.identify);
+        if (saved.flagged) setFlagged(new Set(saved.flagged));
+        if (saved.startedAt) setStartedAt(saved.startedAt);
         if (saved.answers) {
           setAnswers(saved.answers);
           setStage("exam");
@@ -209,11 +226,34 @@ export default function ExamPlayer({ code }: { code: string }) {
   useEffect(() => {
     if (stage !== "identify" && stage !== "exam") return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ identify, answers }));
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          identify,
+          answers,
+          flagged: Array.from(flagged),
+          startedAt,
+        })
+      );
     } catch {
       /* armazenamento indisponível */
     }
-  }, [identify, answers, stage, storageKey]);
+  }, [identify, answers, flagged, startedAt, stage, storageKey]);
+
+  // Cronômetro de tempo limite (envio automático ao zerar)
+  useEffect(() => {
+    if (stage !== "exam" || alreadyDone || !exam?.tempoMinutos) return;
+    const start = startedAt ?? Date.now();
+    if (!startedAt) setStartedAt(start);
+    const totalMs = exam.tempoMinutos * 60 * 1000;
+    const tick = () => {
+      const left = start + totalMs - Date.now();
+      setTimeLeft(Math.max(0, Math.ceil(left / 1000)));
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [stage, alreadyDone, exam?.tempoMinutos, startedAt]);
 
   const answeredCount = useMemo(
     () =>
@@ -262,6 +302,7 @@ export default function ExamPlayer({ code }: { code: string }) {
       alunoId: aluno.id,
     }));
     setStage("exam");
+    if (!startedAt) setStartedAt(Date.now());
     window.scrollTo({ top: 0 });
   }
 
@@ -273,6 +314,25 @@ export default function ExamPlayer({ code }: { code: string }) {
         textoResposta: value.textoResposta ?? prev[q.id]?.textoResposta ?? "",
       },
     }));
+  }
+
+  function toggleFlag(qid: number) {
+    setFlagged((prev) => {
+      const next = new Set(prev);
+      if (next.has(qid)) next.delete(qid);
+      else next.add(qid);
+      return next;
+    });
+  }
+
+  const flaggedCount = flagged.size;
+
+  function formatTime(total: number): string {
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
   }
 
   function openReview() {
@@ -330,6 +390,15 @@ export default function ExamPlayer({ code }: { code: string }) {
       setSubmitting(false);
     }
   }, [unanswered, questions, answers, identify, code, storageKey]);
+
+  // Envio automático quando o tempo zera
+  useEffect(() => {
+    if (stage !== "exam" || timeLeft !== 0 || submitting || alreadyDone) return;
+    if (autoSubmittedRef.current) return;
+    autoSubmittedRef.current = true;
+    setTimeUp(true);
+    submitExam();
+  }, [timeLeft, stage, submitting, alreadyDone, submitExam]);
 
   // ------------------------- TELAS -------------------------
 
@@ -483,6 +552,11 @@ export default function ExamPlayer({ code }: { code: string }) {
           <h1 className="mt-5 text-2xl font-bold text-slate-900">
             {alreadyDone ? "Resultado da prova" : "Prova enviada com sucesso!"}
           </h1>
+          {timeUp && !alreadyDone && (
+            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-amber-100 px-4 py-1.5 text-xs font-semibold text-amber-700">
+              <Timer className="h-3.5 w-3.5" /> O tempo da prova terminou e suas respostas foram enviadas automaticamente.
+            </p>
+          )}
           <p className="mt-2 text-slate-600">
             {alreadyDone ? (
               <>
@@ -560,6 +634,20 @@ export default function ExamPlayer({ code }: { code: string }) {
           <p className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900/80">
             Confira suas respostas antes de enviar. Após o envio não será possível alterá-las.
           </p>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+              {answeredCount} respondidas
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+              {questions.length - answeredCount} em branco
+            </span>
+            {flaggedCount > 0 && (
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                {flaggedCount} marcadas para revisão
+              </span>
+            )}
+          </div>
 
           <div className="mt-4 space-y-3">
             {questions.map((q) => {
@@ -640,7 +728,7 @@ export default function ExamPlayer({ code }: { code: string }) {
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-3">
+        <div className="mx-auto max-w-7xl px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
@@ -653,10 +741,28 @@ export default function ExamPlayer({ code }: { code: string }) {
                 </p>
               </div>
             </div>
-            <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
-              <UserRound className="h-3.5 w-3.5" />
-              {answeredCount} de {questions.length}
-            </span>
+            <div className="flex shrink-0 items-center gap-2">
+              {timeLeft !== null && (
+                <span
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold",
+                    timeLeft <= 60
+                      ? "animate-pulse bg-rose-100 text-rose-700"
+                      : timeLeft <= 300
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-indigo-50 text-indigo-700"
+                  )}
+                  title="Tempo restante"
+                >
+                  <Timer className="h-3.5 w-3.5" />
+                  TEMPO RESTANTE: {formatTime(timeLeft)}
+                </span>
+              )}
+              <span className="flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
+                <UserRound className="h-3.5 w-3.5" />
+                {answeredCount} de {questions.length}
+              </span>
+            </div>
           </div>
           <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
             <div
@@ -667,107 +773,132 @@ export default function ExamPlayer({ code }: { code: string }) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 pb-32 pt-6">
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="mx-auto w-full max-w-3xl">
-            {exam?.instrucoes && (
-              <p className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900/80">
-                {exam.instrucoes}
-              </p>
-            )}
+      <main className="mx-auto max-w-7xl px-4 pb-32 pt-6">
+        {exam?.instrucoes && (
+          <p className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-900/80">
+            {exam.instrucoes}
+          </p>
+        )}
 
-            {exam?.arquivoNome && (
-              <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
-                      <FileText className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-800">{exam.arquivoNome}</p>
-                      <p className="text-xs text-slate-400">Prova em PDF — você pode visualizar enquanto responde.</p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <a
-                      href={`/api/prova/${encodeURIComponent(code)}/pdf`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" /> Abrir em nova aba
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => setShowPdf((v) => !v)}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition",
-                        showPdf
-                          ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                          : "bg-indigo-600 text-white hover:bg-indigo-500"
-                      )}
-                    >
-                      {showPdf ? "Ocultar PDF" : "Ver PDF"}
-                    </button>
-                  </div>
-                </div>
-                {showPdf && (
-                  <iframe
-                    src={`/api/prova/${encodeURIComponent(code)}/pdf`}
-                    title="Prova em PDF"
-                    className="mt-3 h-[70vh] w-full rounded-xl border border-slate-200 bg-slate-50"
-                  />
+        {hasPdf ? (
+          <>
+            {/* Abas para celular */}
+            <div className="mb-4 grid grid-cols-2 gap-2 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileTab("pdf")}
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition",
+                  mobileTab === "pdf"
+                    ? "bg-indigo-600 text-white"
+                    : "border border-slate-200 bg-white text-slate-600"
                 )}
+              >
+                <FileText className="h-4 w-4" /> Prova (PDF)
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobileTab("gabarito")}
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition",
+                  mobileTab === "gabarito"
+                    ? "bg-indigo-600 text-white"
+                    : "border border-slate-200 bg-white text-slate-600"
+                )}
+              >
+                <ClipboardList className="h-4 w-4" /> Gabarito
+              </button>
+            </div>
+
+            {/* PDF 60% + Gabarito 40% */}
+            <div className="grid items-start gap-6 lg:grid-cols-[1.5fr_1fr]">
+              <div className={cn("lg:block", mobileTab !== "pdf" && "hidden")}>
+                <div className="lg:sticky lg:top-24">
+                  <PdfViewer url={`/api/prova/${encodeURIComponent(code)}/pdf`} title={exam?.arquivoNome ?? undefined} />
+                </div>
               </div>
-            )}
+              <div className={cn("lg:block", mobileTab !== "gabarito" && "hidden")}>
+                <AnswerPanel
+                  questions={questions}
+                  answers={answers}
+                  flagged={flagged}
+                  onAnswer={setAnswer}
+                  onToggleFlag={toggleFlag}
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="mx-auto w-full max-w-3xl">
+              {questions.map((q) => (
+                <QuestionCard
+                  key={q.id}
+                  question={q}
+                  answer={answers[q.id]}
+                  onAnswer={(value) => setAnswer(q, value)}
+                  id={`q-${q.id}`}
+                  flagged={flagged.has(q.id)}
+                  onToggleFlag={() => toggleFlag(q.id)}
+                />
+              ))}
 
-            {questions.map((q) => (
-              <QuestionCard
-                key={q.id}
-                question={q}
-                answer={answers[q.id]}
-                onAnswer={(value) => setAnswer(q, value)}
-                id={`q-${q.id}`}
+              {error && (
+                <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                  {error}
+                </p>
+              )}
+            </div>
+
+            {/* Gabarito fixo à direita */}
+            <aside className="hidden lg:block">
+              <GabaritoPanel
+                questions={questions}
+                answers={answers}
+                flagged={flagged}
+                onMark={(q, alternativaId) => setAnswer(q, { alternativaId })}
+                onNavigate={(index) => {
+                  document
+                    .getElementById(`q-${questions[index].id}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                }}
               />
-            ))}
-
-            {error && (
-              <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-                {error}
-              </p>
-            )}
+            </aside>
           </div>
+        )}
 
-          {/* Gabarito fixo à direita */}
-          <aside className="hidden lg:block">
-            <GabaritoPanel
-              questions={questions}
-              answers={answers}
-              onMark={(q, alternativaId) => setAnswer(q, { alternativaId })}
-              onNavigate={(index) => {
-                document
-                  .getElementById(`q-${questions[index].id}`)
-                  ?.scrollIntoView({ behavior: "smooth", block: "center" });
-              }}
-            />
-          </aside>
-        </div>
+        {error && hasPdf && (
+          <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+            {error}
+          </p>
+        )}
       </main>
 
       {/* Barra inferior de envio */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
-          <div className="text-xs text-slate-400">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0 text-xs text-slate-400">
             <p className="font-semibold text-slate-600">
               {answeredCount} de {questions.length} respondidas
+              {flaggedCount > 0 && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
+                  {flaggedCount} p/ revisar
+                </span>
+              )}
             </p>
-            {exam?.dataFim && <p>Prazo: {formatDateTime(exam.dataFim)}</p>}
+            {timeLeft !== null && (
+              <p className="font-semibold text-indigo-600">
+                Tempo restante: {formatTime(timeLeft)}
+              </p>
+            )}
+            {exam?.dataFim && !timeLeft && <p>Prazo: {formatDateTime(exam.dataFim)}</p>}
           </div>
           <button
             onClick={openReview}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500"
+            disabled={submitting}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:opacity-60"
           >
-            <Send className="h-4 w-4" />
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Revisar e Enviar Prova
           </button>
         </div>
@@ -830,11 +961,13 @@ function Select({
 function GabaritoPanel({
   questions,
   answers,
+  flagged,
   onMark,
   onNavigate,
 }: {
   questions: StudentQuestion[];
   answers: AnswerMap;
+  flagged: Set<number>;
   onMark: (q: StudentQuestion, alternativaId: number) => void;
   onNavigate: (index: number) => void;
 }) {
@@ -853,6 +986,7 @@ function GabaritoPanel({
           <h2 className="text-sm font-bold text-slate-900">Gabarito</h2>
           <p className="text-[11px] text-slate-400">
             {answered} de {questions.length} respondidas
+            {flagged.size > 0 && <> · {flagged.size} marcadas</>}
           </p>
         </div>
       </div>
@@ -862,15 +996,20 @@ function GabaritoPanel({
           const answer = answers[q.id];
           const selected = answer?.alternativaId ?? null;
           const selectedAlt = selected !== null ? q.alternativas.find((a) => a.id === selected) : null;
+          const isFlagged = flagged.has(q.id);
           return (
-            <div key={q.id} className="rounded-xl border border-slate-200 p-2.5 transition">
+            <div
+              key={q.id}
+              className={cn("rounded-xl border p-2.5 transition", isFlagged ? "border-amber-200 bg-amber-50/50" : "border-slate-200")}
+            >
               <div className="flex items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={() => onNavigate(qi)}
-                  className="text-xs font-bold text-slate-700 transition hover:text-indigo-600"
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 transition hover:text-indigo-600"
                 >
                   Questão {q.numero}
+                  {isFlagged && <Flag className="h-3 w-3 fill-amber-500 text-amber-500" />}
                 </button>
                 {q.tipo === "essay" ? (
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
@@ -919,14 +1058,24 @@ function QuestionCard({
   answer,
   onAnswer,
   id,
+  flagged,
+  onToggleFlag,
 }: {
   question: StudentQuestion;
   answer?: { alternativaId: number | null; textoResposta: string };
   onAnswer: (value: { alternativaId?: number | null; textoResposta?: string }) => void;
   id?: string;
+  flagged?: boolean;
+  onToggleFlag?: () => void;
 }) {
   return (
-    <div id={id} className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+    <div
+      id={id}
+      className={cn(
+        "mb-4 rounded-2xl border bg-white p-5 shadow-sm sm:p-6",
+        flagged ? "border-amber-300 ring-1 ring-amber-200" : "border-slate-200"
+      )}
+    >
       <div className="flex items-start gap-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-sm font-bold text-white">
           {question.numero}
@@ -938,6 +1087,21 @@ function QuestionCard({
             {question.tipo === "multiple" && ` · valor ${question.valor}`}
           </span>
         </div>
+        {onToggleFlag && (
+          <button
+            type="button"
+            onClick={onToggleFlag}
+            title={flagged ? "Desmarcar para revisão" : "Marcar para revisão"}
+            className={cn(
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition",
+              flagged
+                ? "border-amber-300 bg-amber-100 text-amber-600"
+                : "border-slate-200 bg-white text-slate-400 hover:border-amber-300 hover:text-amber-500"
+            )}
+          >
+            <Flag className={cn("h-4 w-4", flagged && "fill-amber-500 text-amber-500")} />
+          </button>
+        )}
       </div>
 
       {question.tipo === "multiple" ? (
@@ -980,6 +1144,172 @@ function QuestionCard({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Painel de respostas usado no modo "prova em PDF" — gabarito lateral (40%)
+ * com todas as questões, navegação numérica e marcação para revisão.
+ */
+function AnswerPanel({
+  questions,
+  answers,
+  flagged,
+  onAnswer,
+  onToggleFlag,
+}: {
+  questions: StudentQuestion[];
+  answers: AnswerMap;
+  flagged: Set<number>;
+  onAnswer: (q: StudentQuestion, value: { alternativaId?: number | null; textoResposta?: string }) => void;
+  onToggleFlag: (qid: number) => void;
+}) {
+  const answered = questions.filter((q) => {
+    const a = answers[q.id];
+    return q.tipo === "essay" ? Boolean(a?.textoResposta?.trim()) : a?.alternativaId !== null && a?.alternativaId !== undefined;
+  }).length;
+
+  const status = (q: StudentQuestion) => {
+    const a = answers[q.id];
+    const isAnswered = q.tipo === "essay" ? Boolean(a?.textoResposta?.trim()) : a?.alternativaId != null;
+    if (flagged.has(q.id)) return "flagged" as const;
+    return isAnswered ? ("answered" as const) : ("blank" as const);
+  };
+
+  const scrollToQ = (qid: number) => {
+    document.getElementById(`ap-q-${qid}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  return (
+    <div className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+            <ClipboardList className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-slate-900">Gabarito</h2>
+            <p className="text-[11px] text-slate-400">
+              {answered} de {questions.length} respondidas
+            </p>
+          </div>
+        </div>
+
+        {/* Legenda */}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 border-b border-slate-100 px-4 py-2 text-[10px] font-semibold text-slate-500">
+          <span className="flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> Respondida
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> Em branco
+          </span>
+          <span className="flex items-center gap-1">
+            <Flag className="h-2.5 w-2.5 fill-amber-500 text-amber-500" /> Para revisar
+          </span>
+        </div>
+
+        {/* Navegação numérica */}
+        <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-4 py-3">
+          {questions.map((q) => {
+            const st = status(q);
+            return (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => scrollToQ(q.id)}
+                title={`Ir para a questão ${q.numero}`}
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-lg border text-xs font-bold transition",
+                  st === "answered"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : st === "flagged"
+                      ? "border-amber-300 bg-amber-100 text-amber-700 hover:bg-amber-200"
+                      : "border-slate-200 bg-white text-slate-500 hover:bg-slate-100"
+                )}
+              >
+                {q.numero}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Questões */}
+        <div className="divide-y divide-slate-100">
+          {questions.map((q) => {
+            const a = answers[q.id];
+            const isFlagged = flagged.has(q.id);
+            return (
+              <div
+                key={q.id}
+                id={`ap-q-${q.id}`}
+                className={cn("px-4 py-4", isFlagged && "bg-amber-50/50")}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-bold text-slate-800">
+                    <span className="mr-1.5 inline-flex h-6 w-6 items-center justify-center rounded-md bg-indigo-600 text-[11px] font-bold text-white">
+                      {q.numero}
+                    </span>
+                    {renderPrompt(q.pergunta)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onToggleFlag(q.id)}
+                    title={isFlagged ? "Desmarcar para revisão" : "Marcar para revisão"}
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition",
+                      isFlagged
+                        ? "border-amber-300 bg-amber-100 text-amber-600"
+                        : "border-slate-200 bg-white text-slate-400 hover:border-amber-300 hover:text-amber-500"
+                    )}
+                  >
+                    <Flag className={cn("h-4 w-4", isFlagged && "fill-amber-500 text-amber-500")} />
+                  </button>
+                </div>
+
+                {q.tipo === "multiple" ? (
+                  <div className="mt-3 space-y-2">
+                    {q.alternativas.map((alt) => {
+                      const selected = a?.alternativaId === alt.id;
+                      return (
+                        <button
+                          key={alt.id}
+                          type="button"
+                          onClick={() => onAnswer(q, { alternativaId: alt.id })}
+                          className={cn(
+                            "flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition",
+                            selected
+                              ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200"
+                              : "border-slate-200 bg-white hover:border-indigo-200 hover:bg-indigo-50/40"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                              selected ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600"
+                            )}
+                          >
+                            {alt.letra}
+                          </span>
+                          <span className="text-[13px] leading-snug text-slate-800">{alt.texto}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <textarea
+                    value={a?.textoResposta ?? ""}
+                    onChange={(e) => onAnswer(q, { textoResposta: e.target.value })}
+                    rows={3}
+                    placeholder="Escreva sua resposta aqui..."
+                    className="mt-3 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

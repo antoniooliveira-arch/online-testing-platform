@@ -110,6 +110,7 @@ export const provas = pgTable(
     instrucoes: text("instrucoes").notNull().default(""),
     dataInicio: timestamp("data_inicio", { withTimezone: true }),
     dataFim: timestamp("data_fim", { withTimezone: true }),
+    tempoMinutos: integer("tempo_minutos"), // tempo limite da prova (opcional)
     status: text("status").notNull().default("draft"), // "draft" | "active" | "finished"
     codigo: text("codigo").unique(), // código/link de acesso gerado ao publicar
     professorId: integer("professor_id").references(() => users.id),

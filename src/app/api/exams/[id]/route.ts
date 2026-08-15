@@ -66,6 +66,7 @@ export async function GET(_req: Request, { params }: Ctx) {
       status: prova.status,
       dataInicio: prova.dataInicio ? prova.dataInicio.toISOString() : null,
       dataFim: prova.dataFim ? prova.dataFim.toISOString() : null,
+      tempoMinutos: prova.tempoMinutos,
       codigo: prova.codigo,
       arquivoNome: prova.arquivoNome,
       arquivoTamanho: prova.arquivoTamanho,
@@ -144,6 +145,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
           instrucoes: value.instrucoes,
           dataInicio: value.dataInicio,
           dataFim: value.dataFim,
+          tempoMinutos: value.tempoMinutos,
           ...pdfFields,
           ...(publish && prova.status === "draft"
             ? { status: "active", codigo: prova.codigo ?? generateSlug() }
@@ -249,6 +251,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
         instrucoes: value.instrucoes,
         dataInicio: value.dataInicio,
         dataFim: value.dataFim,
+        tempoMinutos: value.tempoMinutos,
         ...pdfFields,
       })
       .where(eq(provas.id, id));

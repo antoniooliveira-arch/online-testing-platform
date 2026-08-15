@@ -41,6 +41,7 @@ export default async function EditExamPage({ params }: { params: Promise<{ id: s
     instrucoes: prova.instrucoes,
     dataInicio: toLocalInput(prova.dataInicio),
     dataFim: toLocalInput(prova.dataFim),
+    tempoMinutos: prova.tempoMinutos,
     pdfName: prova.arquivoNome,
     questoes: qs.map(
       (q): QuestaoDraft => ({
