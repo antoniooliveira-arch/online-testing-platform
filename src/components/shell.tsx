@@ -108,14 +108,16 @@ export default function Shell({
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8">{children}</main>
 
-      <footer className="border-t border-slate-200 bg-white py-5">
-        <p className="flex items-center justify-center gap-1.5 text-xs text-slate-400">
-          <BarChart3 className="h-3.5 w-3.5" />
-          AvaliaLab — plataforma de provas online
-        </p>
-        <p className="mt-1 text-center text-[10px] font-bold text-slate-400">
-          Desenvolvido pelo Departamento de Técnologia/SME.
-        </p>
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-2 px-4 py-5 sm:flex-row">
+          <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <BarChart3 className="h-4 w-4 text-indigo-600" />
+            AvaliaLab — plataforma de provas online
+          </p>
+          <p className="text-sm font-medium text-slate-600">
+            Desenvolvido pelo Departamento de Tecnologia/SME.
+          </p>
+        </div>
       </footer>
     </div>
   );
