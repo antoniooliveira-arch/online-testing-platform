@@ -11,7 +11,9 @@ import {
   FileText,
   Flag,
   GraduationCap,
+  KeyRound,
   Loader2,
+  Lock,
   SearchX,
   Send,
   Timer,
@@ -63,6 +65,7 @@ type Identify = {
   escolaId: string;
   turmaId: string;
   alunoId: string;
+  senha: string;
 };
 type AnswerMap = Record<number, { alternativaId: number | null; textoResposta: string }>;
 
@@ -83,12 +86,14 @@ export default function ExamPlayer({ code }: { code: string }) {
     escolaId: "",
     turmaId: "",
     alunoId: "",
+    senha: "",
   });
   const [schoolData, setSchoolData] = useState<SchoolOption[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [alreadyDone, setAlreadyDone] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
@@ -124,6 +129,7 @@ export default function ExamPlayer({ code }: { code: string }) {
             escolaId: "",
             turmaId: data.aluno.turmaId,
             alunoId: data.aluno.id,
+            senha: "",
           });
           setResult(data.result);
           setStage("done");
@@ -145,6 +151,7 @@ export default function ExamPlayer({ code }: { code: string }) {
             escolaId: "",
             turmaId: data.aluno.turmaId,
             alunoId: data.aluno.id,
+            senha: "",
           });
           setStage("exam");
         } else {
@@ -237,7 +244,7 @@ export default function ExamPlayer({ code }: { code: string }) {
       localStorage.setItem(
         storageKey,
         JSON.stringify({
-          identify,
+          identify: { ...identify, senha: "" },
           answers,
           flagged: Array.from(flagged),
           startedAt,
@@ -285,7 +292,7 @@ export default function ExamPlayer({ code }: { code: string }) {
     [questions, answers]
   );
 
-  function startExam(e: React.FormEvent) {
+  async function startExam(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!identify.escolaId) {
@@ -301,6 +308,29 @@ export default function ExamPlayer({ code }: { code: string }) {
       setError("Selecione o seu nome na lista de alunos da escola.");
       return;
     }
+    if (!identify.senha) {
+      setError("Digite a sua senha para acessar a prova.");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const res = await fetch("/api/aluno/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alunoId: aluno.id, senha: identify.senha }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? "Senha inválida.");
+        setVerifying(false);
+        return;
+      }
+    } catch {
+      setError("Erro de conexão ao validar a senha. Tente novamente.");
+      setVerifying(false);
+      return;
+    }
+    setVerifying(false);
     setIdentify((prev) => ({
       ...prev,
       studentName: aluno.nome,
@@ -476,7 +506,7 @@ export default function ExamPlayer({ code }: { code: string }) {
           </div>
           <p className="mt-5 text-sm font-medium text-slate-700">Identificação do aluno</p>
           <p className="mt-1 text-xs text-slate-500">
-            Preencha seus dados para liberar o acesso às questões — sem necessidade de senha.
+            Selecione sua turma, seu nome na lista e digite a sua senha para acessar a prova.
           </p>
           <form onSubmit={startExam} className="mt-4 space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -533,12 +563,31 @@ export default function ExamPlayer({ code }: { code: string }) {
                 </p>
               )}
             </div>
+            <div>
+              <label className="mb-1 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                <KeyRound className="h-3.5 w-3.5 text-slate-400" /> Senha de acesso
+              </label>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="password"
+                  value={identify.senha}
+                  onChange={(e) => setIdentify((p) => ({ ...p, senha: e.target.value }))}
+                  placeholder="Digite a sua senha"
+                  disabled={!identify.alunoId}
+                  className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                />
+              </div>
+              <p className="mt-1.5 text-xs text-slate-400">Senha padrão: 123456</p>
+            </div>
             {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p>}
             <button
               type="submit"
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-500"
+              disabled={verifying}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              Começar a prova <ArrowRight />
+              {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+              {verifying ? "Validando..." : "Começar a prova"}
             </button>
             {exam?.dataFim && (
               <p className="text-center text-xs text-slate-400">
